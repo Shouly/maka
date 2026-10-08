@@ -24,10 +24,12 @@
 // the command printed and, last, how it stands — `[running]` until it ends,
 // then the line that says how it ended.
 
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { TASK_OUTPUTS_DIRECTORY } from '@maka/core/saved-output-paths';
 import type { ShellRunRecord } from '@maka/core/shell-run';
 import { trimTrailingNewlines } from './bash-output-limits.js';
+import { purgeSavedOutputFolder } from './tool-result-file.js';
 
 /**
  * Both ids reach a path join, and one of them reaches a recursive delete, so
@@ -41,13 +43,28 @@ function segment(value: string, what: string): string {
   return value;
 }
 
+/**
+ * Where background command output is written, one folder per Session:
+ * `<stateRoot>/tasks`. The Host's state root, for the reason saved tool
+ * results are kept there: every permission profile reads it, and none but
+ * bypass writes it. Session ids are unique, so one root serves every Session.
+ */
+export function taskOutputRoot(stateRoot: string): string {
+  return join(stateRoot, TASK_OUTPUTS_DIRECTORY);
+}
+
+/** `<root>/<sessionId>`: the one folder a Session's task output goes in. */
+export function taskOutputSessionFolder(root: string, sessionId: string): string {
+  return join(root, segment(sessionId, 'Session id'));
+}
+
 /** One file per run, under a directory of its Session's own. */
 export function shellRunOutputFilePath(
   root: string,
   sessionId: string,
   shellRunId: string,
 ): string {
-  return join(root, segment(sessionId, 'Session id'), `${segment(shellRunId, 'task id')}.output`);
+  return join(taskOutputSessionFolder(root, sessionId), `${segment(shellRunId, 'task id')}.output`);
 }
 
 /** Everything the reader sees: the output, then the status, then a newline. */
@@ -127,8 +144,9 @@ export function writeShellRunOutputFile(record: ShellRunRecord): Promise<void> {
   if (newest !== undefined && newest > revision) return current?.chain ?? Promise.resolve();
   written.set(path, revision);
   const chain = (current?.chain ?? Promise.resolve()).then(async () => {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, content, 'utf8');
+    // Private to the user, as saved tool results are.
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+    await writeFile(path, content, { encoding: 'utf8', mode: 0o600 });
   });
   writers.set(path, { chain, revision });
   // A failed write must not poison the queue for the writes after it.
@@ -146,13 +164,12 @@ export async function purgeSessionShellRunOutputFiles(
   root: string,
   sessionId: string,
 ): Promise<void> {
-  const directory = join(root, segment(sessionId, 'Session id'));
+  const directory = taskOutputSessionFolder(root, sessionId);
   // The revision each file was last asked to hold is remembered for the life
   // of the process; a retired Session's files are gone, so drop theirs with
   // them rather than growing that map for ever.
-  const prefix = `${directory}/`;
   for (const path of [...written.keys()]) {
-    if (path.startsWith(prefix)) written.delete(path);
+    if (dirname(path) === directory) written.delete(path);
   }
-  await rm(directory, { recursive: true, force: true });
+  await purgeSavedOutputFolder(directory);
 }

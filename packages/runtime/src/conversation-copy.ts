@@ -44,6 +44,7 @@ import {
   buildHistoryCompactCheckpoint,
   matchHistoryCompactCheckpointPrefix,
   validateHistoryCompactCheckpointShape,
+  type TextHistoryCompactCheckpoint,
 } from './history-compact-checkpoint.js';
 import { findCheckpointSummaryDefect } from './history-compact-summary-validation.js';
 import { isHistoryCompactContentEvent } from './history-compaction.js';
@@ -54,7 +55,23 @@ import {
 import { buildToolOperationId } from './runtime-commit-sink.js';
 import { isContinuationStartRuntimeEvent } from './runtime-event-read-model.js';
 import { runtimeHandoffPause } from '@maka/core/runtime-handoff';
+import {
+  rewriteDurableToolResultProjectionSavedOutputPaths,
+  rewriteOpaqueSavedOutputPaths,
+  rewriteRuntimeEventSavedOutputPaths,
+  rewriteToolResultContentSavedOutputPaths,
+  savedOutputPathMapRewrite,
+  savedOutputPathRecorder,
+  type SavedOutputPathRewrite,
+} from '@maka/core/saved-output-paths';
+import { dirname } from 'node:path';
 import { rewriteDurableToolResultProjectionArtifactRefs } from './durable-tool-result-projection.js';
+import { taskOutputSessionFolder } from './shell-run-output-file.js';
+import {
+  linkSavedOutputFile,
+  savedOutputFileIn,
+  toolResultSessionFolder,
+} from './tool-result-file.js';
 
 export interface ConversationCopySlice {
   readonly messages: readonly StoredMessage[];
@@ -88,6 +105,12 @@ export type ConversationCopyArtifactReferenceMap =
       readonly artifactIds: ReadonlyMap<string, string>;
       readonly relativePaths: ReadonlyMap<string, string>;
       readonly contextRefs?: ReadonlyMap<string, string>;
+      /**
+       * Saved tool output and task output files the copy put in the target's
+       * own folders, by the source's absolute path. A path not here, such as
+       * one whose file was already gone, is left as the source had it.
+       */
+      readonly savedOutputPaths?: ReadonlyMap<string, string>;
       readonly linkedChildren:
         | { readonly mode: 'reject' }
         | { readonly mode: 'snapshot' }
@@ -192,6 +215,93 @@ export function collectConversationCopySessionContextRefIds(input: {
   return [...refIds].sort();
 }
 
+/**
+ * The saved tool outputs and task outputs the copied slice names, in the
+ * source Session's own folders (`folders`): where a tool result names its
+ * saved file, and the text of a result, message or retained checkpoint that
+ * names one. A path into any other folder is not the source's to copy.
+ */
+export function collectConversationCopySavedOutputPaths(input: {
+  readonly folders: readonly string[];
+  readonly messages: readonly StoredMessage[];
+  readonly plan: ConversationRuntimeLedgerCopyPlan;
+}): readonly string[] {
+  const found = new Set<string>();
+  const record = savedOutputPathRecorder(input.folders, found);
+  for (const message of input.messages) {
+    if (message.type === 'tool_result') {
+      rewriteToolResultContentSavedOutputPaths(message.content, record);
+    } else if (message.type === 'assistant') {
+      record(message.text);
+    }
+  }
+  const plans = input.plan.runs.map(({ run, runtimeEvents }) => ({ run, events: runtimeEvents }));
+  const compactableByRun = sourceCompactableEventsByRunId(plans, input.plan.inlineRuntimeEvents);
+  const includedEventIds = new Set(plans.flatMap(({ events }) => events.map((event) => event.id)));
+  for (const { run, runtimeEvents, operationalEvents } of input.plan.runs) {
+    for (const event of runtimeEvents) rewriteRuntimeEventSavedOutputPaths(event, record);
+    for (const event of operationalEvents) {
+      const selected = selectConversationCopyCheckpoint(
+        event,
+        compactableByRun.get(run.runId) ?? [],
+        includedEventIds,
+      );
+      if (selected) record(selected.checkpoint.summary);
+    }
+  }
+  return [...found].sort();
+}
+
+/** Where a Host keeps saved output: tool results and background task output. */
+export interface ConversationCopySavedOutputRoots {
+  readonly toolResults: string;
+  readonly taskOutputs: string;
+}
+
+/** A Session's own folders of saved output, under `roots`. */
+export function conversationCopySavedOutputFolders(
+  roots: ConversationCopySavedOutputRoots,
+  sessionId: string,
+): { readonly toolResults: string; readonly taskOutputs: string } {
+  return {
+    toolResults: toolResultSessionFolder(roots.toolResults, sessionId),
+    taskOutputs: taskOutputSessionFolder(roots.taskOutputs, sessionId),
+  };
+}
+
+/**
+ * Put every saved output in `paths` into the target Session's own folders,
+ * under the same name, and answer where each went. A file that is no longer
+ * there is left out, so its path stays as the source had it; the copy goes
+ * on without it. `ticket` is the one the copy took when it started: a target
+ * retired since then gets no file.
+ */
+export async function copyConversationSavedOutputs(input: {
+  readonly roots: ConversationCopySavedOutputRoots;
+  readonly sourceSessionId: string;
+  readonly targetSessionId: string;
+  readonly paths: readonly string[];
+  readonly ticket: number;
+}): Promise<ReadonlyMap<string, string>> {
+  const source = conversationCopySavedOutputFolders(input.roots, input.sourceSessionId);
+  const target = conversationCopySavedOutputFolders(input.roots, input.targetSessionId);
+  const copied = new Map<string, string>();
+  for (const path of input.paths) {
+    const folder =
+      dirname(path) === source.toolResults
+        ? target.toolResults
+        : dirname(path) === source.taskOutputs
+          ? target.taskOutputs
+          : undefined;
+    if (folder === undefined) continue;
+    const destination = savedOutputFileIn(folder, path);
+    if (await linkSavedOutputFile(path, destination, input.ticket)) {
+      copied.set(path, destination);
+    }
+  }
+  return copied;
+}
+
 export interface CloneConversationRuntimeLedgerResult {
   readonly copiedMessages: readonly StoredMessage[];
   readonly runIdMap: readonly {
@@ -247,7 +357,9 @@ export function rewriteConversationCopyMessage(
   if (message.type === 'assistant' && references.mode === 'exact') {
     return {
       ...message,
-      text: rewriteAttachmentResourceRefs(message.text, references.artifactIds),
+      text: savedOutputRewrite(references)(
+        rewriteAttachmentResourceRefs(message.text, references.artifactIds),
+      ),
     };
   }
   if (message.type === 'user' && message.attachments) {
@@ -277,6 +389,21 @@ export function rewriteConversationCopyMessage(
   }
   return message;
 }
+
+/** The rewrite that moves a saved output's path to the target's copy of it. */
+function savedOutputRewrite(
+  references: ConversationCopyArtifactReferenceMap,
+): SavedOutputPathRewrite {
+  if (references.mode !== 'exact' || !references.savedOutputPaths) return (text) => text;
+  let rewrite = savedOutputRewrites.get(references.savedOutputPaths);
+  if (!rewrite) {
+    rewrite = savedOutputPathMapRewrite(references.savedOutputPaths);
+    savedOutputRewrites.set(references.savedOutputPaths, rewrite);
+  }
+  return rewrite;
+}
+
+const savedOutputRewrites = new WeakMap<ReadonlyMap<string, string>, SavedOutputPathRewrite>();
 
 function rewriteAttachmentResourceRefs(
   text: string,
@@ -695,36 +822,16 @@ function cloneAgentRunEvent(
       logicalCallIds,
     );
   } else if (event.type === 'history_compact_checkpoint_recorded') {
-    const sourceCheckpoint = event.data?.checkpoint;
-    // Conversation copies carry the canonical raw RuntimeEvents and can create
-    // a fresh checkpoint on demand, so a checkpoint this Runtime can no longer
-    // hold to its own contract is DROPPED, never fatal: the copy is complete
-    // without it. That covers opaque provider state (do not export it into a
-    // new session or degrade it into user-visible placeholder text), a
-    // superseded source policy, and a prefix that no longer matches. A ledger
-    // keeps every checkpoint it ever recorded, so a session that compacted
-    // under an older policy would otherwise be permanently uncopyable.
-    if (!validateHistoryCompactCheckpointShape(sourceCheckpoint, event.sessionId)) return null;
-    if (sourceCheckpoint.version === 3) return null;
-    const match = matchHistoryCompactCheckpointPrefix(sourceCheckpoint, sourceCompactableEvents);
-    if (match.reason) return null;
-    // Copy is an admission seam for the sectioned summary contract: a marked
-    // checkpoint whose summary no longer satisfies the COMPLETE predicate —
-    // re-runnable here on structure and truncation (the size floor needs the
-    // summarizer call's usage, which a copy does not have) — must not
-    // propagate into a fresh session.
-    if (findCheckpointSummaryDefect(sourceCheckpoint.summary) !== undefined) {
-      throw new Error(`Cannot copy invalid history compact checkpoint ${event.id}`);
-    }
-    const coveredRuntimeEvents = match.coveredRuntimeEvents.map((sourceEvent) => {
-      const cloned = clonedRuntimeEvents.get(sourceEvent.id);
-      if (!cloned) {
-        throw new Error(
-          `History compact checkpoint ${event.id} crosses the conversation copy boundary`,
-        );
-      }
-      return cloned;
-    });
+    const selected = selectConversationCopyCheckpoint(
+      event,
+      sourceCompactableEvents,
+      clonedRuntimeEvents,
+    );
+    if (!selected) return null;
+    const sourceCheckpoint = selected.checkpoint;
+    const coveredRuntimeEvents = selected.coveredRuntimeEvents.map(
+      (sourceEvent) => clonedRuntimeEvents.get(sourceEvent.id)!,
+    );
     const headAnchor =
       sourceCheckpoint.phase === 'mid_turn'
         ? {
@@ -737,7 +844,7 @@ function cloneAgentRunEvent(
     const checkpoint = buildHistoryCompactCheckpoint({
       sessionId: references.targetSessionId,
       coveredRuntimeEvents,
-      summary: sourceCheckpoint.summary,
+      summary: savedOutputRewrite(references)(sourceCheckpoint.summary),
       highWaterName: sourceCheckpoint.highWaterName,
       highWaterSeq: sourceCheckpoint.highWaterSeq,
       now: sourceCheckpoint.createdAt,
@@ -765,6 +872,38 @@ function cloneAgentRunEvent(
     runId: ids.runId,
     ...(data ? { data } : {}),
   };
+}
+
+/** The same checkpoint admission governs both its file references and its copied record. */
+function selectConversationCopyCheckpoint(
+  event: AgentRunEvent,
+  sourceCompactableEvents: readonly RuntimeEvent[],
+  includedEventIds: { has(eventId: string): boolean },
+):
+  | {
+      readonly checkpoint: TextHistoryCompactCheckpoint;
+      readonly coveredRuntimeEvents: readonly RuntimeEvent[];
+    }
+  | undefined {
+  if (event.type !== 'history_compact_checkpoint_recorded') return undefined;
+  const checkpoint = event.data?.checkpoint;
+  // Copies retain the raw events and can compact again. Opaque provider state,
+  // superseded source policies and unmatched prefixes do not cross sessions.
+  if (!validateHistoryCompactCheckpointShape(checkpoint, event.sessionId)) return undefined;
+  if (checkpoint.version === 3) return undefined;
+  const match = matchHistoryCompactCheckpointPrefix(checkpoint, sourceCompactableEvents);
+  if (match.reason) return undefined;
+  // A matching, marked summary still has to satisfy the current format. Its
+  // size floor needs the summarizer's usage, which a copy does not have.
+  if (findCheckpointSummaryDefect(checkpoint.summary) !== undefined) {
+    throw new Error(`Cannot copy invalid history compact checkpoint ${event.id}`);
+  }
+  if (match.coveredRuntimeEvents.some((sourceEvent) => !includedEventIds.has(sourceEvent.id))) {
+    throw new Error(
+      `History compact checkpoint ${event.id} crosses the conversation copy boundary`,
+    );
+  }
+  return { checkpoint, coveredRuntimeEvents: match.coveredRuntimeEvents };
 }
 
 function rewriteModelCallAttempt(
@@ -1017,12 +1156,17 @@ function rewriteRuntimeEventReferences(
   event: RuntimeEvent,
   references: ConversationCopyReferenceMap,
 ): RuntimeEvent {
+  const savedOutputs = savedOutputRewrite(references);
   const content =
     event.content?.kind === 'text'
       ? {
           ...event.content,
           ...(references.mode === 'exact'
-            ? { text: rewriteAttachmentResourceRefs(event.content.text, references.artifactIds) }
+            ? {
+                text: savedOutputs(
+                  rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
+                ),
+              }
             : {}),
           ...(event.content.attachments
             ? {
@@ -1039,9 +1183,12 @@ function rewriteRuntimeEventReferences(
             result: rewriteRuntimeToolResult(event.content.result, references),
             ...(event.content.modelProjection
               ? {
-                  modelProjection: rewriteDurableToolResultProjectionArtifactRefs(
-                    event.content.modelProjection,
-                    (ref) => rewriteProjectionArtifactRef(ref, references),
+                  modelProjection: rewriteDurableToolResultProjectionSavedOutputPaths(
+                    rewriteDurableToolResultProjectionArtifactRefs(
+                      event.content.modelProjection,
+                      (ref) => rewriteProjectionArtifactRef(ref, references),
+                    ),
+                    savedOutputs,
                   ),
                 }
               : {}),
@@ -1245,7 +1392,7 @@ function rewriteToolResultContent(
       }),
     };
   }
-  return content;
+  return rewriteToolResultContentSavedOutputPaths(content, savedOutputRewrite(references));
 }
 
 function rewriteRuntimeToolResult(
@@ -1256,7 +1403,8 @@ function rewriteRuntimeToolResult(
   try {
     content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(value));
   } catch {
-    return value;
+    // An opaque result names a saved output only in its text.
+    return rewriteOpaqueSavedOutputPaths(value, savedOutputRewrite(references));
   }
   return rewriteToolResultContent(content, references);
 }

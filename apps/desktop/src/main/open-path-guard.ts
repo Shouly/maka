@@ -131,10 +131,10 @@ const TOOL_RESULT_FILE_NAME = /^[A-Za-z0-9_-]{1,128}\.txt$/u;
  * A tool result saved to a file because it was too long to show, for the
  * output block's reveal action.
  *
- * The sandboxed command can write anywhere under the temp folder and is told
- * the path, so nothing here trusts what is on disk to be what the runtime
- * wrote. Main builds the path itself, from the root, the Session's own folder
- * and the file name, and the renderer's path must be exactly that one. Then,
+ * A command run in bypass can write under the state root and is told the
+ * path, so nothing here trusts what is on disk to be what the runtime wrote.
+ * Main builds the path itself, from the root, the Session's own folder and
+ * the file name, and the renderer's path must be exactly that one. Then,
  * without following a link: the Session folder is a real directory where it
  * should be, and the file is a regular file. A symlink in either place is
  * refused, even one pointing inside. The caller reveals the path built here,

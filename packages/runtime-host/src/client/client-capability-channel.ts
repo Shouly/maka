@@ -20,7 +20,6 @@
 import { randomUUID } from 'node:crypto';
 import type { InteractionFormInput, InteractionFormResult } from '@maka/core/interaction';
 import {
-  CLIENT_CAPABILITY_MAX_RESULT_BYTES,
   CLIENT_CAPABILITY_RESULT_CHUNK_MAX_BYTES,
   decodeClientCapabilityClientFrame,
   decodeClientCapabilityReplaceInput,
@@ -36,6 +35,7 @@ import {
   type ClientCapabilityUnregisterResult,
 } from '../protocol/index.js';
 import type { ClientCapabilityProvider } from './client-capability.js';
+import { encodeClientCapabilityResult } from './client-capability-result.js';
 
 interface ClientCapabilityRegistration {
   readonly registrationId: string;
@@ -429,10 +429,7 @@ export class ClientCapabilityChannel {
     result: ReturnType<typeof decodeClientCapabilityResult>,
     invocation: ClientCapabilityInvocation,
   ): Promise<void> {
-    const encoded = Buffer.from(JSON.stringify(result), 'utf8');
-    if (encoded.byteLength > CLIENT_CAPABILITY_MAX_RESULT_BYTES) {
-      throw new Error('Client Capability result exceeds the byte limit');
-    }
+    const encoded = Buffer.from(encodeClientCapabilityResult(result), 'utf8');
     if (encoded.byteLength <= 32 * 1024) {
       await this.#options.write({
         kind: 'client.capability.result',

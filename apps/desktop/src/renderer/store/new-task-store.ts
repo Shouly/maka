@@ -113,9 +113,10 @@ export function sessionHostViewsClientPath(
  * What a Session's saved tool output offers to reveal, file by file: the
  * reveal, or nothing. Nothing when the Session's files are not on this disk
  * (`hostViewsClientPath`, from {@link sessionHostViewsClientPath}), and
- * nothing for a file outside the Session's own folder: a branched or revised
- * Session carries the results it was made from, saved under the Session they
- * came from, and main reveals only from the folder of the Session that asks.
+ * nothing for a file outside the Session's own folder: main reveals only from
+ * the folder of the Session that asks. A branched or revised Session has its
+ * own copy of each saved output it carries, under its own folder; a path the
+ * copy could not bring, its file already gone, still names the source's.
  */
 export function savedOutputRevealer(
   sessionId: string,

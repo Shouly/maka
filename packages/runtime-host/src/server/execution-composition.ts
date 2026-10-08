@@ -66,10 +66,6 @@ import {
   FilesystemWorkerClient,
 } from '@maka/runtime/filesystem-worker';
 import { isOAuthEnrollmentProviderEnabled } from '@maka/runtime/oauth-provider-contracts';
-import {
-  loadHistoryCompactCheckpointsFromRunLedger,
-  loadLatestHistoryCompactCheckpointFromRunLedger,
-} from '@maka/runtime/history-compact-ledger';
 import { skillInlineReferences } from '@maka/runtime/skill-invocation';
 import { RuntimeReadModel } from '@maka/runtime/runtime-read-model';
 import {
@@ -78,6 +74,7 @@ import {
 } from '@maka/runtime/agent-swarm-status-tool';
 import { SessionActivityRegistry } from '@maka/runtime/goal-turn-lifecycle';
 import { ShellRunProcessManager } from '@maka/runtime/shell-run-manager';
+import { taskOutputRoot } from '@maka/runtime/shell-run-output-file';
 import { toolResultRoot } from '@maka/runtime/tool-result-file';
 import {
   resolveShellPlan,
@@ -188,7 +185,6 @@ import { SessionOperationLane } from './session-operation-lane.js';
 import { type HostMessageRootPort, HostMessageCoordinator } from './message-coordinator.js';
 import { HostNetworkProxyCoordinator } from './network-proxy-coordinator.js';
 import { HostOAuthExecutionAuthority } from './oauth-execution-authority.js';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { toRuntimePolicyProxy } from './runtime-policy-proxy.js';
 import { AcpSetupError } from './acp/connection.js';
@@ -437,6 +433,15 @@ export async function createExecutionRuntimeHostComposition(
     let graphCoordinator: AgentGraphCoordinator | undefined;
     let graphSupervisorWake: AgentGraphSupervisorWakeCoordinator | undefined;
     const graphWakeActivities = new SessionActivityRegistry();
+    // Where a background command's output is written, and a tool result too
+    // long to show is saved, for the model to Read: under the state root,
+    // which every permission profile reads and none but bypass writes, so a
+    // sandboxed command cannot change what the model is pointed at. One
+    // folder per Session under each.
+    const savedOutputRoots = {
+      toolResults: toolResultRoot(context.owner.capability.canonicalPath),
+      taskOutputs: taskOutputRoot(context.owner.capability.canonicalPath),
+    };
     const shellRuns = new ShellRunProcessManager({
       store: openedShellRunStore,
       newId: randomUUID,
@@ -446,13 +451,8 @@ export async function createExecutionRuntimeHostComposition(
         void continuity?.enqueueRuntimeResourcePtyData(event);
       },
       onTaskFinished: (record) => taskNotifications?.taskFinished(record),
-      // Where a background command's output is written for the model to Read.
-      // The temp directory, not the Host's own state: what the model is told
-      // to read it must be allowed to read, and every managed profile reads
-      // the temp directory. Session ids are unique, so one root serves every
-      // Session.
-      taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
-      toolResultRoot: toolResultRoot(),
+      taskOutputRoot: savedOutputRoots.taskOutputs,
+      toolResultRoot: savedOutputRoots.toolResults,
     });
     const sandboxManager = createBuiltinSandboxManager();
     const filesystemWorkerLaunchSpecProvider =
@@ -1319,7 +1319,7 @@ export async function createExecutionRuntimeHostComposition(
       onModelToolsChanged: registerBackendInvalidation,
       interactions,
       grants: stores.interactionStore,
-      toolResultRoot: toolResultRoot(),
+      toolResultRoot: savedOutputRoots.toolResults,
     });
     externalAgentSetup = new HostExternalAgentSetupCoordinator({
       install: async (input) => {
@@ -2284,6 +2284,7 @@ export async function createExecutionRuntimeHostComposition(
       graph: requireGraphCoordinator(graphCoordinator),
       isSessionActive: (sessionId) => coordinator.readRootState(sessionId).kind !== 'idle',
       requestDrain: context.requestDrain,
+      savedOutputRoots,
     });
     const sessionRetirement = new HostSessionRetirementCoordinator({
       stores: stores.sessionStore,
@@ -2317,8 +2318,8 @@ export async function createExecutionRuntimeHostComposition(
         await openedGraphControlStore.purgeAgentGraphEpochs(sessionId);
       },
       worktrees: worktreeChildExecutor,
-      taskOutputRoot: join(tmpdir(), 'maka', 'tasks'),
-      toolResultRoot: toolResultRoot(),
+      taskOutputRoot: savedOutputRoots.taskOutputs,
+      toolResultRoot: savedOutputRoots.toolResults,
       requestDrain: context.requestDrain,
       sessionLane,
     });

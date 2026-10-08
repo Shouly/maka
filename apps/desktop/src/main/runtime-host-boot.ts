@@ -495,6 +495,9 @@ if (!startupLocalStorageRoot) {
   await new Promise<never>(() => {});
   throw new Error("Desktop storage root resolution did not complete");
 }
+// `workspaceRoot` as the local Host knows it, the root its records name files
+// under: where main looks for a saved tool result to reveal.
+const localStateRoot = startupLocalStorageRoot.canonicalPath;
 const settingsStore = createSettingsStore(workspaceRoot);
 const desktopLocale = createDesktopLocaleAuthority({
   readSettings: () => settingsStore.get(),
@@ -1875,6 +1878,7 @@ function registerHostClientIpc(
     ipcMain: scopedIpc,
     shell,
     allowLocalPaths: !usesHostWorkspace,
+    stateRoot: localStateRoot,
   });
   registerWorkspaceSearchIpc({
     ipcMain: scopedIpc,

@@ -293,7 +293,7 @@ export interface TranscriptCopy {
        */
       readonly truncated: (chars: number) => string;
       readonly openFailed: string;
-      /** The file is gone: the temp folder was cleared, or the machine restarted. */
+      /** The file is gone: something deleted it. */
       readonly missing: string;
     };
   };
@@ -809,7 +809,7 @@ const TRANSCRIPT_COPY = {
         truncated: (chars) =>
           `仅显示开头。输出太大，没能完整保存：文件里保存了其中 ${chars.toLocaleString('zh-CN')} 个字符，缺少的部分有标记。`,
         openFailed: '打不开保存的输出',
-        missing: '文件已不存在。保存的输出是临时文件，可能已被清理。',
+        missing: '文件已不存在，可能已被删除。',
       },
     },
     delivery: {
@@ -1068,7 +1068,7 @@ const TRANSCRIPT_COPY = {
         truncated: (chars) =>
           `僅顯示開頭。輸出太大，沒能完整儲存：檔案裡儲存了其中 ${chars.toLocaleString('zh-TW')} 個字元，缺少的部分有標記。`,
         openFailed: '開不了儲存的輸出',
-        missing: '檔案已不存在。儲存的輸出是暫存檔，可能已被清除。',
+        missing: '檔案已不存在，可能已被刪除。',
       },
     },
     delivery: {
@@ -1376,7 +1376,7 @@ const TRANSCRIPT_COPY = {
         truncated: (chars) =>
           `Showing the start. The output was too large to save whole: the file holds ${chars.toLocaleString('en-US')} characters of it, with a line marking what was left out.`,
         openFailed: 'The saved output would not open',
-        missing: 'The file is gone. Saved outputs are temporary and may have been cleared.',
+        missing: 'The file is gone. It may have been deleted.',
       },
     },
     delivery: {

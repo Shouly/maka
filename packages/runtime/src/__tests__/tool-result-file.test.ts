@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import fsPromises from 'node:fs/promises';
 import {
   mkdir,
   mkdtemp,
@@ -29,16 +30,19 @@ import {
   utimes,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { syncBuiltinESMExports } from 'node:module';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
-import { canReadPath } from '@maka/core/permission-profile';
+import { canReadPath, canWritePath } from '@maka/core/permission-profile';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
 import type { PermissionMode } from '@maka/core/permission';
 import { buildBuiltinTools } from '../builtin-tools.js';
 import { ShellOutputSpool } from '../shell-output-spool.js';
 import {
+  linkSavedOutputFile,
   newToolResultFileName,
+  purgeSavedOutputFolder,
   purgeSessionToolResultFiles,
   removeWorkingFilesOlderThan,
   STALE_WORKING_FILE_MS,
@@ -47,6 +51,7 @@ import {
   sliceEndAtCharacter,
   sweepStaleWorkingFiles,
   toolResultFilePath,
+  toolResultRoot,
   toolResultSaveTicket,
   truncateUtf8,
   writeToolResultFile,
@@ -215,13 +220,12 @@ describe('a saved tool result', () => {
     await purgeSessionToolResultFiles(root, 'session-never');
   });
 
-  test('is readable under every permission mode, wherever the session works', async () => {
+  test('lives under the state root, which every mode reads and only bypass writes', async () => {
     const workspace = await realpath(await directory('maka-workspace-'));
-    const path = toolResultFilePath(
-      join(await realpath(tmpdir()), 'maka', 'tool-results'),
-      'session-1',
-      'call-1',
-    );
+    // Where a desktop keeps its state: neither the workspace nor a temp folder.
+    const stateRoot = join(homedir(), 'Library', 'Application Support', 'Maka', 'workspaces', 'w');
+    assert.equal(toolResultRoot(stateRoot), join(stateRoot, 'tool-results'));
+    const path = toolResultFilePath(toolResultRoot(stateRoot), 'session-1', 'call-1');
     const context = {
       workspaceRoots: [workspace],
       tmpdir: await realpath(tmpdir()),
@@ -230,6 +234,7 @@ describe('a saved tool result', () => {
     for (const mode of ['explore', 'ask', 'bypass'] as PermissionMode[]) {
       const { profile } = compilePermissionProfile({ mode, cwd: workspace });
       assert.equal(canReadPath(profile, path, context), true, mode);
+      assert.equal(canWritePath(profile, path, context), mode === 'bypass', mode);
     }
   });
 
@@ -265,6 +270,100 @@ describe('a saved tool result', () => {
   });
 });
 
+describe("a saved file put into another Session's folder", () => {
+  test('is the same file, hard linked, and stays when the source folder goes', async () => {
+    const root = await directory('maka-tool-results-link-');
+    const saved = await saveToolResultText(toolResultFilePath(root, 'source', 'call-1'), 'output');
+    const target = toolResultFilePath(root, 'branch', 'call-1');
+
+    assert.equal(await linkSavedOutputFile(saved.path, target), true);
+    const [from, to] = await Promise.all([stat(saved.path), stat(target)]);
+    assert.equal(to.ino, from.ino);
+    assert.equal(to.nlink, 2);
+    if (process.platform !== 'win32') {
+      assert.equal((await stat(join(root, 'branch'))).mode & 0o777, 0o700);
+      assert.equal(to.mode & 0o777, 0o600);
+    }
+
+    await purgeSessionToolResultFiles(root, 'source');
+    assert.equal(await readFile(target, 'utf8'), 'output');
+  });
+
+  test('copies every byte without hard links when a single write could be short', async (t) => {
+    const root = await directory('maka-tool-results-copy-short-write-');
+    const content = 'output line\n'.repeat(16_384);
+    const saved = await saveToolResultText(toolResultFilePath(root, 'source', 'call-1'), content);
+    const target = toolResultFilePath(root, 'branch', 'call-1');
+    const originalOpen = fsPromises.open;
+    let openedDestination = false;
+    const link = t.mock.method(fsPromises, 'link', async () => {
+      throw Object.assign(new Error('Hard links unavailable'), { code: 'ENOTSUP' });
+    });
+    const open = t.mock.method(
+      fsPromises,
+      'open',
+      async (...args: Parameters<typeof originalOpen>) => {
+        const handle = await originalOpen(...args);
+        if (args[0] === target && args[1] === 'wx') {
+          openedDestination = true;
+          const write = handle.write.bind(handle);
+          // The single-write API may return fewer bytes without throwing.
+          // writeFile owns the write-all contract, even across stream chunks.
+          t.mock.method(handle, 'write', async (bytes: Buffer) => write(bytes.subarray(0, 8)));
+        }
+        return handle;
+      },
+    );
+    syncBuiltinESMExports();
+    try {
+      assert.equal(await linkSavedOutputFile(saved.path, target), true);
+      assert.equal(openedDestination, true, 'the byte-copy fallback was exercised');
+      const copied = await readFile(target);
+      assert.equal(copied.byteLength, Buffer.byteLength(content));
+      assert.deepEqual(copied, Buffer.from(content));
+    } finally {
+      open.mock.restore();
+      link.mock.restore();
+      syncBuiltinESMExports();
+    }
+  });
+
+  test('is nothing when the source file is gone, or is not a regular file', async () => {
+    const root = await directory('maka-tool-results-link-missing-');
+    const gone = toolResultFilePath(root, 'source', 'gone');
+    assert.equal(
+      await linkSavedOutputFile(gone, toolResultFilePath(root, 'branch', 'gone')),
+      false,
+    );
+    await mkdir(join(root, 'source', 'folder.txt'), { recursive: true });
+    assert.equal(
+      await linkSavedOutputFile(
+        join(root, 'source', 'folder.txt'),
+        toolResultFilePath(root, 'branch', 'folder'),
+      ),
+      false,
+    );
+    assert.deepEqual(await readdir(root), ['source'], 'no target folder was made');
+  });
+
+  test('is refused into a folder purged after the ticket, and leaves nothing', async () => {
+    const root = await directory('maka-tool-results-link-retired-');
+    const saved = await saveToolResultText(toolResultFilePath(root, 'source', 'call-1'), 'x');
+    const ticket = toolResultSaveTicket();
+    await purgeSavedOutputFolder(join(root, 'branch'));
+    await assert.rejects(
+      linkSavedOutputFile(saved.path, toolResultFilePath(root, 'branch', 'call-1'), ticket),
+      /retired/u,
+    );
+    assert.deepEqual(await readdir(root), ['source']);
+    // A ticket taken after the purge links as any other.
+    assert.equal(
+      await linkSavedOutputFile(saved.path, toolResultFilePath(root, 'branch', 'call-1')),
+      true,
+    );
+  });
+});
+
 describe('working files a crashed process left behind', () => {
   async function aged(path: string, ageMs: number): Promise<void> {
     await writeFile(path, 'left behind');
@@ -276,7 +375,7 @@ describe('working files a crashed process left behind', () => {
     const root = await directory('maka-tool-results-sweep-');
     await aged(join(root, 'run-old.stdout.partial'), STALE_WORKING_FILE_MS + 60_000);
     await aged(join(root, 'run-old.stderr.partial'), STALE_WORKING_FILE_MS + 60_000);
-    // Another app sharing the root may still be writing these.
+    // A command still running may be writing these.
     await aged(join(root, 'run-new.stdout.partial'), STALE_WORKING_FILE_MS - 60_000);
     // Not working files.
     await aged(join(root, 'notes.txt'), STALE_WORKING_FILE_MS + 60_000);

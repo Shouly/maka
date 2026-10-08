@@ -18,15 +18,29 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
+import { encodeCanonicalRuntimeEvent } from '@maka/core/canonical-runtime-event';
+import type { RuntimeEvent } from '@maka/core/runtime-event';
 import { OPERATIONAL_STATE_DATABASE_NAME } from '@maka/storage/operational-state-store';
 import { createSessionStore } from '@maka/storage/session-store';
 import { exportSessionBundle } from '../session-export.js';
 import { importSessionBundle } from '../session-import.js';
+import { shellRunOutputFilePath, taskOutputRoot } from '../shell-run-output-file.js';
+import { saveToolResultText, toolResultFilePath, toolResultRoot } from '../tool-result-file.js';
 
 const CONNECTION_SLUG = 'test-connection';
 const MODEL = 'test-model';
@@ -149,6 +163,194 @@ test('round-trips a Session into another workspace, row for row', async () => {
       assert.equal(Number(count.count), 2);
     } finally {
       db.close();
+    }
+  } finally {
+    await rm(source.root, { recursive: true, force: true });
+    await rm(target.root, { recursive: true, force: true });
+  }
+});
+
+test("carries a Session's saved outputs and names them under the importing root", async () => {
+  const source = await makeWorkspace('maka-import-saved-source');
+  const target = await makeWorkspace('maka-import-saved-target');
+  try {
+    const store = createSessionStore(source.workspaceRoot);
+    let sessionId: string;
+    let otherId: string;
+    try {
+      const create = async (name: string) =>
+        (
+          await store.create({
+            cwd: source.workspaceRoot,
+            llmConnectionSlug: CONNECTION_SLUG,
+            model: MODEL,
+            permissionMode: 'ask',
+            name,
+          })
+        ).id;
+      sessionId = await create('Exported');
+      otherId = await create('Not exported');
+    } finally {
+      await store.close?.();
+    }
+    const sourceRoot = await realpath(source.workspaceRoot);
+    const saved = await saveToolResultText(
+      toolResultFilePath(toolResultRoot(sourceRoot), sessionId, 'bash-1'),
+      'all of the output',
+    );
+    const task = shellRunOutputFilePath(taskOutputRoot(sourceRoot), sessionId, 'task-1');
+    await mkdir(dirname(task), { recursive: true });
+    await writeFile(task, 'done\n');
+    await saveToolResultText(
+      toolResultFilePath(toolResultRoot(sourceRoot), otherId, 'other-1'),
+      'stays',
+    );
+    const event = (id: string, seq: number, overrides: Partial<RuntimeEvent>): RuntimeEvent => ({
+      id,
+      invocationId: 'invocation-1',
+      runId: 'run-1',
+      sessionId,
+      turnId: 'turn-1',
+      ts: seq,
+      partial: false,
+      role: 'tool',
+      author: 'tool',
+      ...overrides,
+    });
+    const events = [
+      event('evt-call', 1, {
+        role: 'model',
+        author: 'agent',
+        content: {
+          kind: 'function_call',
+          id: 'call-1',
+          name: 'Read',
+          args: { file_path: saved.path },
+        },
+      }),
+      event('evt-result', 2, {
+        content: {
+          kind: 'function_response',
+          id: 'call-1',
+          name: 'Bash',
+          result: {
+            kind: 'terminal',
+            cwd: sourceRoot,
+            cmd: 'make',
+            status: 'completed',
+            exitCode: 0,
+            output: {
+              mode: 'pipes',
+              stdout: 'all of',
+              stderr: '',
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              redacted: false,
+            },
+            savedOutput: { path: saved.path, chars: saved.chars, truncated: false },
+          },
+          modelProjection: { version: 1, kind: 'text', text: `saved to ${saved.path};` },
+        },
+      }),
+      event('evt-notice', 3, {
+        role: 'user',
+        author: 'system',
+        content: { kind: 'text', text: `<output-file>${task}</output-file>` },
+      }),
+      event('evt-done', 4, { role: 'system', author: 'system', status: 'completed' }),
+    ];
+    const db = openDatabase(source.workspaceRoot);
+    try {
+      const insert = db.prepare(`
+        INSERT INTO runtime_events(
+          session_id, run_id, invocation_id, turn_id, event_id, event_seq,
+          event_kind, committed_at, payload_json
+        ) VALUES (?, 'run-1', 'invocation-1', 'turn-1', ?, ?, 'text', ?, ?)
+      `);
+      for (const [index, item] of events.entries()) {
+        insert.run(
+          sessionId,
+          item.id,
+          index + 1,
+          index + 1,
+          encodeCanonicalRuntimeEvent(item).json,
+        );
+      }
+      db.prepare(
+        'INSERT INTO core_shell_runs(session_id, shell_run_id, started_at, record_json) VALUES (?, ?, 1, ?)',
+      ).run(sessionId, 'task-1', JSON.stringify({ shellRunId: 'task-1', outputFile: task }));
+    } finally {
+      db.close();
+    }
+
+    const bundle = join(source.root, 'bundle.maka-session');
+    const exported = await exportSessionBundle({
+      workspaceRoot: source.workspaceRoot,
+      sessionId,
+      destination: bundle,
+    });
+    if (!exported.ok) assert.fail(`export failed: ${JSON.stringify(exported.reason)}`);
+    assert.equal(exported.export.stateRoot, sourceRoot);
+    assert.ok(exported.export.includedEntries.includes('tool-results'));
+    assert.ok(exported.export.includedEntries.includes('tasks'));
+
+    const imported = await importSessionBundle({
+      workspaceRoot: target.workspaceRoot,
+      source: bundle,
+    });
+    if (!imported.ok) assert.fail(`import failed: ${JSON.stringify(imported.reason)}`);
+
+    const targetRoot = await realpath(target.workspaceRoot);
+    const movedSaved = toolResultFilePath(toolResultRoot(targetRoot), sessionId, 'bash-1');
+    const movedTask = shellRunOutputFilePath(taskOutputRoot(targetRoot), sessionId, 'task-1');
+    assert.equal(await readFile(movedSaved, 'utf8'), 'all of the output');
+    assert.equal(await readFile(movedTask, 'utf8'), 'done\n');
+    if (process.platform !== 'win32') {
+      assert.equal((await stat(movedSaved)).mode & 0o777, 0o600);
+      assert.equal((await stat(dirname(movedSaved))).mode & 0o777, 0o700);
+    }
+    // Only the exported Session's folder travelled.
+    await assert.rejects(lstat(join(toolResultRoot(targetRoot), otherId)), /ENOENT/u);
+
+    const targetDb = openDatabase(target.workspaceRoot, true);
+    try {
+      const payload = (id: string) =>
+        JSON.parse(
+          String(
+            (
+              targetDb
+                .prepare('SELECT payload_json FROM runtime_events WHERE event_id = ?')
+                .get(id) as { payload_json: unknown }
+            ).payload_json,
+          ),
+        ) as RuntimeEvent;
+      const result = payload('evt-result').content;
+      assert.equal(result?.kind, 'function_response');
+      if (result?.kind !== 'function_response') return;
+      assert.equal(
+        (result.result as { savedOutput: { path: string } }).savedOutput.path,
+        movedSaved,
+      );
+      assert.deepEqual(result.modelProjection, {
+        version: 1,
+        kind: 'text',
+        text: `saved to ${movedSaved};`,
+      });
+      assert.deepEqual(payload('evt-notice').content, {
+        kind: 'text',
+        text: `<output-file>${movedTask}</output-file>`,
+      });
+      // A tool call is left exactly as it was made: its hash authenticates it.
+      const call = payload('evt-call').content;
+      assert.deepEqual(call?.kind === 'function_call' ? call.args : undefined, {
+        file_path: saved.path,
+      });
+      const record = targetDb
+        .prepare('SELECT record_json FROM core_shell_runs WHERE session_id = ?')
+        .get(sessionId) as { record_json: unknown };
+      assert.equal(JSON.parse(String(record.record_json)).outputFile, movedTask);
+    } finally {
+      targetDb.close();
     }
   } finally {
     await rm(source.root, { recursive: true, force: true });

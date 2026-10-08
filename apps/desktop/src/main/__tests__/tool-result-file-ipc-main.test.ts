@@ -42,15 +42,15 @@ interface Fixture {
 
 interface RevealOptions {
   allowLocalPaths?: boolean;
-  root?: string;
+  stateRoot?: string;
   showItemInFolder?: (path: string) => void;
 }
 
 /**
- * A real saved-results root in a temp folder: this Session's folder holding
- * one saved run, another Session's folder holding its own, and a file outside
- * the root. The shell is a fake that records every call, `openPath` included,
- * so a test can tell that nothing was ever opened.
+ * A real state root in a temp folder, its saved-results folder holding this
+ * Session's folder with one saved run and another Session's folder with its
+ * own, and a file outside it. The shell is a fake that records every call,
+ * `openPath` included, so a test can tell that nothing was ever opened.
  */
 async function withRoot(run: (fixture: Fixture) => Promise<void>): Promise<void> {
   const base = await mkdtemp(join(tmpdir(), 'maka-tool-result-reveal-'));
@@ -80,7 +80,7 @@ async function withRoot(run: (fixture: Fixture) => Promise<void>): Promise<void>
         ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as Handler) },
         shell,
         allowLocalPaths: options.allowLocalPaths ?? true,
-        root: options.root ?? root,
+        stateRoot: options.stateRoot ?? base,
       });
       assert.equal(handlers.has('app:openToolResultFile'), false, 'there is no open channel');
       const handler = handlers.get('app:revealToolResultFile');
@@ -129,9 +129,14 @@ test('a path that is not the one main builds for that Session is refused', async
     assert.deepEqual(await reveal(SESSION, RUN), NOT_ALLOWED, 'a relative path');
     assert.deepEqual(await reveal(SESSION, join(folder, 'nested', RUN)), NOT_ALLOWED, 'a subfolder');
     assert.deepEqual(
-      await reveal(SESSION, saved, { root: join(base, 'other-root') }),
+      await reveal(SESSION, saved, { stateRoot: join(base, 'other-root') }),
       NOT_ALLOWED,
-      'a different root',
+      'a different state root',
+    );
+    assert.deepEqual(
+      await reveal(SESSION, join(tmpdir(), 'maka', 'tool-results', SESSION, RUN)),
+      NOT_ALLOWED,
+      'where a saved result used to be kept',
     );
     assert.deepEqual(calls, []);
   });

@@ -24,13 +24,13 @@
 // is saved here and the model is given the path: it reads the file with Read
 // or searches it with Grep when it needs the rest. One folder per Session,
 // made when the Session first saves something and removed with the Session.
-// Folders are private to the user (0700) and files too (0600): the root is in
-// the temp directory, which other users may share.
+// Folders are private to the user (0700) and files too (0600).
 
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readdir, rm, rmdir, type FileHandle } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { constants } from 'node:fs';
+import { link, lstat, mkdir, open, readdir, rm, rmdir, type FileHandle } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import { TOOL_RESULTS_DIRECTORY } from '@maka/core/saved-output-paths';
 import { estimateTokens } from './context-budget-helpers.js';
 
 /** A saved result past this many bytes keeps only its start. */
@@ -52,13 +52,14 @@ function segment(value: string, what: string): string {
 }
 
 /**
- * Where a tool result too long to show is saved on this machine, one folder
- * per Session. The temp directory, for the reason background task output lives
- * there: every permission mode reads it. The desktop opens a saved result only
- * from inside this folder.
+ * Where a tool result too long to show is saved, one folder per Session:
+ * `<stateRoot>/tool-results`. The Host's state root, because every permission
+ * profile reads it, so the model can read what it is told to, and none but
+ * bypass writes it, so a sandboxed command cannot change a saved result. The
+ * desktop reveals a saved result only from inside this folder.
  */
-export function toolResultRoot(): string {
-  return join(tmpdir(), 'maka', 'tool-results');
+export function toolResultRoot(stateRoot: string): string {
+  return join(stateRoot, TOOL_RESULTS_DIRECTORY);
 }
 
 /** `<root>/<sessionId>`: the one folder a Session's saved results go in. */
@@ -105,8 +106,8 @@ const sweptRoots = new Map<string, Promise<void>>();
 /**
  * Remove the working files a crashed process left in `root`, once per root in
  * this process; every later call answers with the same sweep. Only files
- * untouched for {@link STALE_WORKING_FILE_MS} go: another app on this machine
- * can share the root, and the files of its running commands are newer.
+ * untouched for {@link STALE_WORKING_FILE_MS} go, so a command still running,
+ * in this process or one handing the state root over to it, keeps its own.
  */
 export function sweepStaleWorkingFiles(root: string): Promise<void> {
   let sweep = sweptRoots.get(root);
@@ -226,7 +227,15 @@ export async function saveToolResultText(
 
 /** Drop every saved result of a Session, when the Session itself is retired. */
 export async function purgeSessionToolResultFiles(root: string, sessionId: string): Promise<void> {
-  const folder = toolResultSessionFolder(root, sessionId);
+  await purgeSavedOutputFolder(toolResultSessionFolder(root, sessionId));
+}
+
+/**
+ * Remove one Session's folder of saved output, and refuse every save into it
+ * made under a ticket taken before now. A background task's output folder is
+ * fenced the same way, for a copy linking files into it.
+ */
+export async function purgeSavedOutputFolder(folder: string): Promise<void> {
   // Marked before the delete starts, so a save that has not yet made the
   // folder never makes it, and one that has cleans up after itself.
   purgeCount++;
@@ -236,6 +245,90 @@ export async function purgeSessionToolResultFiles(root: string, sessionId: strin
     purgedFolders.delete(purgedFolders.keys().next().value!);
   }
   await rm(folder, { recursive: true, force: true });
+}
+
+/**
+ * Put the saved file at `source` into another Session's folder, as `target`.
+ * A saved tool result is never written again, so the two can be one file: a
+ * hard link, and a private byte copy where the file system makes none. (A
+ * background task's output is rewritten in place until its command ends, and
+ * a link shows that same output under both names.) False when `source` is
+ * not there, or is not a regular file, and nothing was made. Refused, like a
+ * save, when the target folder was purged after `ticket`.
+ */
+export async function linkSavedOutputFile(
+  source: string,
+  target: string,
+  ticket = toolResultSaveTicket(),
+): Promise<boolean> {
+  const stats = await lstat(source).catch(() => undefined);
+  if (!stats?.isFile()) return false;
+  const folder = dirname(target);
+  if (purgedSince(folder, ticket)) throw new Error('The Session was retired');
+  const made = await mkdir(folder, { recursive: true, mode: PRIVATE_FOLDER });
+  let created = false;
+  try {
+    try {
+      await link(source, target);
+      created = true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        if (made !== undefined) await rmdir(folder).catch(() => undefined);
+        return false;
+      }
+      if (code === 'EEXIST') throw error;
+      const copied = await copySavedOutputBytes(source, target, ticket);
+      if (!copied) {
+        if (made !== undefined) await rmdir(folder).catch(() => undefined);
+        return false;
+      }
+      created = true;
+    }
+    if (purgedSince(folder, ticket)) throw new Error('The Session was retired');
+    return true;
+  } catch (error) {
+    if (created) await rm(target, { force: true }).catch(() => undefined);
+    if (made !== undefined || purgedSince(folder, ticket)) {
+      await rmdir(folder).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+/** The byte copy {@link linkSavedOutputFile} falls back to: a new, private file. */
+async function copySavedOutputBytes(
+  source: string,
+  target: string,
+  ticket: number,
+): Promise<boolean> {
+  let input: FileHandle;
+  try {
+    input = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  try {
+    if (!(await input.stat()).isFile()) return false;
+    await writeToolResultFile(
+      target,
+      async (output) => {
+        for await (const chunk of input.createReadStream({ autoClose: false })) {
+          await output.writeFile(chunk as Buffer);
+        }
+      },
+      ticket,
+    );
+    return true;
+  } finally {
+    await input.close().catch(() => undefined);
+  }
+}
+
+/** The saved file `path` names, moved to the same name in `folder`. */
+export function savedOutputFileIn(folder: string, path: string): string {
+  return join(folder, basename(path));
 }
 
 /**

@@ -80,6 +80,12 @@ export interface SessionExportManifest {
   schema: Record<string, number>;
   /** Named for local resolution; no credential is carried. */
   connection: { llmConnectionSlug: string; model: string };
+  /**
+   * The state root the Sessions were exported from. Their records name saved
+   * tool output and task output by absolute path under it, and an import
+   * moves those paths to its own root, where it puts the files.
+   */
+  stateRoot: string;
   /** State entries the bundle carries, and the ones the policy left behind. */
   includedEntries: string[];
   excludedEntries: string[];
@@ -177,6 +183,7 @@ export async function exportSessionBundle(
       sessionIds: plan.sessionIds,
       schema: plan.sourceSchema,
       connection: plan.connection,
+      stateRoot: plan.stateRoot,
       includedEntries: plan.includedEntries,
       excludedEntries: plan.excludedEntries,
       diagnosticsOmitted: true,

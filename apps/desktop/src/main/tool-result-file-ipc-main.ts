@@ -18,11 +18,11 @@
  */
 
 // Shows where a tool result that was too long to show was saved, in the
-// system's file manager. It REVEALS and never opens: the folder is in the temp
-// directory, where the sandboxed command can write too, and handing a path
-// from there to `shell.openPath` would let the system launch whatever that
-// file is registered to, outside the sandbox. Main builds the path itself
-// (`resolveToolResultFilePath`) and reveals that one.
+// system's file manager. It REVEALS and never opens: the folder is under the
+// state root, which a command run in bypass can write, and handing a path from
+// there to `shell.openPath` would let the system launch whatever that file is
+// registered to. Main builds the path itself (`resolveToolResultFilePath`),
+// from the state root the local Host keeps it under, and reveals that one.
 
 import { toolResultRoot } from '@maka/runtime/tool-result-file';
 import type { ReconnectableReadIpcMain } from './ipc-reconnect-policy.js';
@@ -38,12 +38,12 @@ export interface ToolResultFileIpcDeps {
   readonly shell: { showItemInFolder(path: string): void };
   /** False for a Host on another machine, whose files are not on this disk. */
   readonly allowLocalPaths: boolean;
-  /** The folder saved results live under; the runtime's own unless a test says. */
-  readonly root?: string;
+  /** The local Host's state root, the one it saves results under. */
+  readonly stateRoot: string;
 }
 
 export function registerToolResultFileIpc(deps: ToolResultFileIpcDeps): void {
-  const root = deps.root ?? toolResultRoot();
+  const root = toolResultRoot(deps.stateRoot);
   deps.ipcMain.handle(
     'app:revealToolResultFile',
     async (_event, sessionId: unknown, path: unknown): Promise<RevealToolResultFileResult> => {

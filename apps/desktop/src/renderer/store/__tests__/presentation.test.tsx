@@ -1471,7 +1471,7 @@ function settledTerminal(
   } as unknown as ToolActivityItem;
 }
 
-const SAVED_PATH = '/tmp/maka/tool-results/session-1/result.txt';
+const SAVED_PATH = '/state/tool-results/session-1/result.txt';
 
 // The reveal is offered through the decision the session view makes: only
 // when the session's Host is on this machine, and only for a file in that
@@ -1586,7 +1586,7 @@ test('a saved Bash output offers no reveal for a Host on another machine', () =>
   assert.equal(sessionHostViewsClientPath(reconnecting, LOCAL_SESSION), false);
 });
 
-test('a saved output from the session a branch was made from offers no reveal', () => {
+test("a branch reveals its own copy of a saved output, not the source session's file", () => {
   const render = (path: string, sessionId: string) =>
     renderTree(
       createElement(
@@ -1598,7 +1598,10 @@ test('a saved output from the session a branch was made from offers no reveal', 
         ),
       ),
     );
-  // A branch keeps the results it was made from, and their files stay in the
+  // A branch names its own copy of each saved output, in its own folder.
+  const copied = render('/state/tool-results/branch-1/result.txt', 'branch-1');
+  assert.ok(copied.querySelector('[data-maka-tool-handoff]'), 'the branch reveals its copy');
+  // A path the copy could not bring, its file already gone, still names the
   // source session's folder, which main does not reveal for the branch.
   const inherited = render(SAVED_PATH, 'branch-1');
   assert.equal(inherited.querySelector('[data-maka-tool-handoff]'), null, 'no button');
@@ -1612,14 +1615,11 @@ test('a saved output from the session a branch was made from offers no reveal', 
   const reveal = savedOutputRevealer('session-1', true, (path) => revealed.push(path));
   reveal(SAVED_PATH)?.();
   assert.deepEqual(revealed, [SAVED_PATH], 'the reveal is of the path the block shows');
-  const windowsPath = 'C:\\Users\\me\\AppData\\Local\\Temp\\maka\\tool-results\\session-1\\r.txt';
+  const windowsPath =
+    'C:\\Users\\me\\AppData\\Roaming\\Maka\\workspaces\\default\\tool-results\\session-1\\r.txt';
   assert.ok(reveal(windowsPath), 'a Windows path is read by its folder too');
-  assert.equal(reveal('/tmp/maka/tool-results/other-session/result.txt'), undefined);
-  assert.equal(
-    reveal('/tmp/maka/tool-results/session-1'),
-    undefined,
-    'the folder itself is no file',
-  );
+  assert.equal(reveal('/state/tool-results/other-session/result.txt'), undefined);
+  assert.equal(reveal('/state/tool-results/session-1'), undefined, 'the folder itself is no file');
   assert.equal(
     savedOutputRevealer('session-1', false, () => assert.fail('never revealed'))(SAVED_PATH),
     undefined,

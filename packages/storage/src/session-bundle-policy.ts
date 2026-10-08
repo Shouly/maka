@@ -33,15 +33,35 @@ import {
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+  win32,
+} from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ArtifactRecord } from '@maka/core/artifacts';
+import { encodeCanonicalRuntimeEvent } from '@maka/core/canonical-runtime-event';
+import { decodeRuntimeEvent, type RuntimeEvent } from '@maka/core/runtime-event';
+import {
+  rewriteRuntimeEventSavedOutputPaths,
+  SAVED_OUTPUT_FILE_NAME,
+  savedOutputPathRewrite,
+  TASK_OUTPUTS_DIRECTORY,
+  TOOL_RESULTS_DIRECTORY,
+} from '@maka/core/saved-output-paths';
 import { decodeArtifactRecordJsons } from './artifact-metadata-codec.js';
 import {
   withArtifactWriterLock,
   withLeaseBoundArtifactWriterLock,
 } from './artifact-writer-lock.js';
 import { readStableBoundedFile, syncDirectoryChain } from './stable-storage.js';
+import { publishImportedSavedOutputFile } from './imported-saved-output-file.js';
 import {
   prepareArtifactWriterLockAuthorityForLease,
   type StorageRootLease,
@@ -92,7 +112,18 @@ export const SESSION_BUNDLE_STATE_ENTRIES = [
   OPERATIONAL_STATE_DATABASE_NAME,
   CONTEXT_OFFLOAD_DATABASE_NAME,
   CONTEXT_OFFLOAD_VALUES_DIRECTORY_NAME,
+  TOOL_RESULTS_DIRECTORY,
+  TASK_OUTPUTS_DIRECTORY,
 ] as const;
+
+/**
+ * The state root folders a Session's saved output lives in, one folder per
+ * Session under each: tool results too long to show, and background task
+ * output. A bundle carries the exported Sessions' folders, because their
+ * records name the files in them.
+ */
+const SAVED_OUTPUT_DIRECTORIES = [TOOL_RESULTS_DIRECTORY, TASK_OUTPUTS_DIRECTORY] as const;
+
 export const SESSION_BUNDLE_PROTECTED_ENTRIES = [] as const;
 
 export type SessionBundleExportErrorCode =
@@ -307,6 +338,13 @@ export async function planSessionBundleExport(
     }
     includedEntries.push('artifacts');
   }
+  for (const directory of SAVED_OUTPUT_DIRECTORIES) {
+    const files = await planSavedOutputFiles(stateRoot, directory, sessionIds);
+    if (files.length === 0) continue;
+    entries.push({ relativePath: directory, kind: 'directory', source: 'copy' });
+    for (const relativePath of files) entries.push({ relativePath, kind: 'file', source: 'copy' });
+    includedEntries.push(directory);
+  }
   const contextFiles = await planContextSnapshotFiles(stateRoot, sessionIds);
   for (const relativePath of contextFiles) {
     entries.push({ relativePath, kind: 'file', source: 'context_snapshot' });
@@ -376,6 +414,40 @@ export async function exportSessionBundleState(
       }),
     input.lease ? { lease: input.lease } : {},
   );
+}
+
+/**
+ * The saved output of the exported Sessions, as `<directory>/<sessionId>/<file>`.
+ * A Session that saved nothing has no folder and no entry. Only a regular
+ * file with a saved output's own name is carried; the copy then refuses a
+ * link anywhere on the way, as it does for an artifact.
+ */
+async function planSavedOutputFiles(
+  stateRoot: string,
+  directory: string,
+  sessionIds: readonly string[],
+): Promise<string[]> {
+  const files: string[] = [];
+  for (const sessionId of sessionIds) {
+    const folder = resolveInside(stateRoot, `${directory}/${sessionId}`);
+    const metadata = await lstat(folder).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (!metadata) continue;
+    if (!metadata.isDirectory()) {
+      throw new SessionBundleExportError(
+        metadata.isSymbolicLink() ? 'symlink' : 'unsupported_entry',
+        `${directory}/${sessionId} is not a directory`,
+      );
+    }
+    const names = (await readdir(folder, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && SAVED_OUTPUT_FILE_NAME.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    for (const name of names) files.push(`${directory}/${sessionId}/${name}`);
+  }
+  return files;
 }
 
 /**
@@ -913,6 +985,13 @@ export interface SessionBundleImportInput {
   /** A hydrated bundle's state tree: the filtered database, artifacts, context. */
   bundleStateRoot: string;
   /**
+   * The state root the bundle was exported from. The records name a saved
+   * tool output or task output by its absolute path under that root; given,
+   * those paths are moved to the same place under `stateRoot`, where the
+   * import puts the files. Omitted, the paths are left as they are.
+   */
+  sourceStateRoot?: string;
+  /**
    * Authority the caller already holds, instead of electing it here.
    *
    * The Runtime Host owns the Storage Root for its whole lifetime and the
@@ -998,20 +1077,35 @@ export async function importSessionBundleState(
           // a Session already visible whose bytes never arrived -- and which a
           // retry could not fix, because the ids are now taken.
           const artifacts = await copyBundleArtifacts(bundleStateRoot, stateRoot);
+          const savedOutputs: string[] = [];
           try {
+            const savedOutputSessionIds = await copyBundleSavedOutputs(
+              bundleStateRoot,
+              stateRoot,
+              sessionIds,
+              savedOutputs,
+            );
             const contextRefs = await mergeBundleContext(
               bundleStateRoot,
               stateRoot,
               contextLocked,
               sessionIds,
             );
-            const inserted = mergeBundleDatabase(lease, bundleDatabasePath);
+            const inserted = mergeBundleDatabase(
+              lease,
+              bundleDatabasePath,
+              input.sourceStateRoot !== undefined && input.sourceStateRoot !== stateRoot
+                ? { from: input.sourceStateRoot, to: stateRoot, sessionIds, savedOutputSessionIds }
+                : undefined,
+            );
             return { sessionIds: inserted, artifactFiles: artifacts.copied, contextRefs };
           } catch (error) {
             // Take back only what this attempt created. Anything already there
             // belongs to someone else, or to an earlier attempt that the next
             // one will recognise.
-            for (const path of artifacts.created) await rm(path, { force: true }).catch(() => {});
+            for (const path of [...artifacts.created, ...savedOutputs]) {
+              await rm(path, { force: true }).catch(() => {});
+            }
             throw error;
           }
         } finally {
@@ -1184,6 +1278,70 @@ async function copyBundleArtifacts(
 }
 
 /**
+ * Place the bundle's saved output under this workspace's state root: each
+ * `<directory>/<sessionId>/<file>` at the same place, private to the user.
+ * Only the folders of the Sessions the bundle carries, and only files with a
+ * saved output's name. A retry accepts an identical file it left before, as
+ * the artifact copy does; each file this attempt made is added to `created`.
+ */
+async function copyBundleSavedOutputs(
+  bundleStateRoot: string,
+  stateRoot: string,
+  sessionIds: readonly string[],
+  created: string[],
+): Promise<ReadonlySet<string>> {
+  const sessions = new Set(sessionIds);
+  const copiedSessions = new Set<string>();
+  for (const directory of SAVED_OUTPUT_DIRECTORIES) {
+    const source = resolveInside(bundleStateRoot, directory);
+    if (!(await pathExists(source))) continue;
+    const destinationRoot = resolveInside(stateRoot, directory);
+    await mkdir(destinationRoot, { recursive: true, mode: 0o700 });
+    await assertManagedDestinationDirectory(destinationRoot, stateRoot);
+    for (const folder of await readdir(source, { withFileTypes: true })) {
+      if (!folder.isDirectory() || !sessions.has(folder.name)) {
+        throw new SessionBundleImportError(
+          'invalid_root',
+          `Bundle ${directory} entry belongs to no Session it carries: ${folder.name}`,
+        );
+      }
+      const destinationFolder = resolveInside(stateRoot, `${directory}/${folder.name}`);
+      await mkdir(destinationFolder, { recursive: true, mode: 0o700 });
+      await assertManagedDestinationDirectory(destinationFolder, stateRoot);
+      for (const file of await readdir(resolveInside(source, folder.name), {
+        withFileTypes: true,
+      })) {
+        const name = `${directory}/${folder.name}/${file.name}`;
+        if (!file.isFile() || !SAVED_OUTPUT_FILE_NAME.test(file.name)) {
+          throw new SessionBundleImportError(
+            'io_failed',
+            `Bundle entry is not saved output: ${name}`,
+          );
+        }
+        const from = resolveInside(source, `${folder.name}/${file.name}`);
+        const destination = resolveInside(destinationFolder, file.name);
+        await publishImportedSavedOutputFile({
+          from,
+          to: destination,
+          stateRoot,
+          onCreated: (path) => created.push(path),
+          onExisting: async () => {
+            if (!(await sameFileContent(from, destination))) {
+              throw new SessionBundleImportError(
+                'conflict',
+                `Saved output already present: ${name}`,
+              );
+            }
+          },
+        });
+        copiedSessions.add(folder.name);
+      }
+    }
+  }
+  return copiedSessions;
+}
+
+/**
  * Compares two files without following a symlink at either path.
  *
  * A payload path is content-addressed, so `EEXIST` there is normally the same
@@ -1222,6 +1380,14 @@ async function sameFileContent(left: string, right: string): Promise<boolean> {
 /** Internal: the stable reader reports every refusal through one error. */
 class NotTheSamePayloadError extends Error {}
 
+/** Saved-output paths to move from the root the bundle left to this one. */
+interface SavedOutputRootMove {
+  readonly from: string;
+  readonly to: string;
+  readonly sessionIds: readonly string[];
+  readonly savedOutputSessionIds: ReadonlySet<string>;
+}
+
 /**
  * Copy every table the bundle has, in one transaction.
  *
@@ -1233,6 +1399,7 @@ class NotTheSamePayloadError extends Error {}
 function mergeBundleDatabase(
   lease: OperationalStateDatabaseLease,
   bundleDatabasePath: string,
+  move: SavedOutputRootMove | undefined,
 ): string[] {
   const target = lease.database;
   // Read-only, so a bundle is never written by the act of reading it -- and so
@@ -1253,7 +1420,11 @@ function mergeBundleDatabase(
       ) === 1;
     target.exec('PRAGMA foreign_keys = OFF');
     try {
-      return lease.transaction('write', () => mergeAttachedBundle(target));
+      return lease.transaction('write', () => {
+        const inserted = mergeAttachedBundle(target);
+        if (move) moveImportedSavedOutputPaths(target, move);
+        return inserted;
+      });
     } finally {
       if (restoreForeignKeys) target.exec('PRAGMA foreign_keys = ON');
     }
@@ -1303,6 +1474,148 @@ function mergeAttachedBundle(target: DatabaseSync): string[] {
       ).map((entry) => String(entry.session_id));
     }
   }
+}
+
+/**
+ * Point the imported records at the saved output where the import put it.
+ *
+ * A record names a saved file by its absolute path under the state root it
+ * was written on, and the file now sits at the same place under this one.
+ * The same places a conversation copy rewrites are rewritten here: a tool
+ * result and what the model was shown of it, a text that names the file, and
+ * a background task's output file. A tool call's arguments stay as they were
+ * made, since their hash authenticates the call, and a row that does not
+ * decode is left as it came.
+ */
+function moveImportedSavedOutputPaths(target: DatabaseSync, move: SavedOutputRootMove): void {
+  const sourcePaths = savedOutputSourcePathApi(move.from);
+  const folders = new Map<string, string>();
+  for (const sessionId of move.sessionIds) {
+    for (const directory of SAVED_OUTPUT_DIRECTORIES) {
+      folders.set(
+        sourcePaths.join(move.from, directory, sessionId),
+        join(move.to, directory, sessionId),
+      );
+    }
+  }
+  const rewrite = savedOutputPathRewrite([...folders.keys()], (path) => {
+    const folder = folders.get(sourcePaths.dirname(path));
+    return folder === undefined ? undefined : join(folder, sourcePaths.basename(path));
+  });
+  // An opaque provider checkpoint cannot reveal whether it mentions one of
+  // the relocated files. Relocating a Session's saved files invalidates its
+  // old fold too, even when its only visible path was in an immutable call.
+  const changedSessions = new Set(move.savedOutputSessionIds);
+  // The root as it reads inside a JSON string, to pick out the rows naming it.
+  const needle = JSON.stringify(sourcePaths.normalize(move.from)).slice(1, -1);
+  if (bundleHasTable(target, 'runtime_events')) {
+    const update = target.prepare(
+      'UPDATE main.runtime_events SET payload_json = ? WHERE event_id = ?',
+    );
+    for (const row of target
+      .prepare(
+        'SELECT session_id, event_id, payload_json FROM bundle.runtime_events WHERE instr(payload_json, ?) > 0',
+      )
+      .all(needle) as Array<{ session_id?: unknown; event_id?: unknown; payload_json?: unknown }>) {
+      let event: RuntimeEvent;
+      try {
+        event = decodeRuntimeEvent(JSON.parse(String(row.payload_json)));
+      } catch {
+        continue;
+      }
+      const moved = rewriteRuntimeEventSavedOutputPaths(event, rewrite);
+      if (moved !== event) {
+        update.run(encodeCanonicalRuntimeEvent(moved).json, String(row.event_id));
+        changedSessions.add(String(row.session_id));
+      }
+    }
+  }
+  if (bundleHasTable(target, 'core_shell_runs')) {
+    const update = target.prepare(
+      'UPDATE main.core_shell_runs SET record_json = ? WHERE session_id = ? AND shell_run_id = ?',
+    );
+    for (const row of target
+      .prepare(
+        'SELECT session_id, shell_run_id, record_json FROM bundle.core_shell_runs WHERE instr(record_json, ?) > 0',
+      )
+      .all(needle) as Array<{
+      session_id?: unknown;
+      shell_run_id?: unknown;
+      record_json?: unknown;
+    }>) {
+      let record: unknown;
+      try {
+        record = JSON.parse(String(row.record_json));
+      } catch {
+        continue;
+      }
+      if (record === null || typeof record !== 'object') continue;
+      const outputFile = (record as { outputFile?: unknown }).outputFile;
+      if (typeof outputFile !== 'string') continue;
+      const moved = rewrite(outputFile);
+      if (moved === outputFile) continue;
+      changedSessions.add(String(row.session_id));
+      update.run(
+        JSON.stringify({ ...record, outputFile: moved }),
+        String(row.session_id),
+        String(row.shell_run_id),
+      );
+    }
+  }
+  if (bundleHasTable(target, 'core_agent_run_events')) {
+    // A summary may be the only remaining text that names a saved output.
+    // Do not let an otherwise matching checkpoint replay its old path.
+    for (const row of target
+      .prepare(
+        `SELECT session_id, record_json FROM bundle.core_agent_run_events
+         WHERE event_type = 'history_compact_checkpoint_recorded' AND instr(record_json, ?) > 0`,
+      )
+      .all(needle) as Array<{ session_id?: unknown; record_json?: unknown }>) {
+      try {
+        const record: unknown = JSON.parse(String(row.record_json));
+        if (record === null || typeof record !== 'object') continue;
+        const summary = (record as { data?: { checkpoint?: { summary?: unknown } } }).data
+          ?.checkpoint?.summary;
+        if (typeof summary === 'string' && rewrite(summary) !== summary) {
+          changedSessions.add(String(row.session_id));
+        }
+      } catch {
+        // As with an undecodable RuntimeEvent, preserve an opaque record.
+      }
+    }
+  }
+  // This runs inside the import transaction, before a Session is published.
+  // Keep the canonical history and reset only its old compaction chain. The
+  // projection and ledger must agree: either one can resurrect a stale fold.
+  const removeCheckpoints = target.prepare(
+    `DELETE FROM main.core_agent_run_events
+     WHERE session_id = ? AND event_type = 'history_compact_checkpoint_recorded'`,
+  );
+  const clearProjection = target.prepare(
+    `INSERT INTO main.core_agent_run_projections(session_id, event_type, event_json)
+     VALUES (?, 'history_compact_checkpoint_recorded', NULL)
+     ON CONFLICT(session_id, event_type) DO UPDATE SET event_json = NULL`,
+  );
+  for (const sessionId of move.sessionIds) {
+    if (!changedSessions.has(sessionId)) continue;
+    removeCheckpoints.run(sessionId);
+    clearProjection.run(sessionId);
+  }
+}
+
+/** Interpret the exported root on its own OS, not on the importing machine. */
+function savedOutputSourcePathApi(root: string): typeof posix {
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/u.test(root) && win32.isAbsolute(root)) return win32;
+  if (posix.isAbsolute(root)) return posix;
+  throw new SessionBundleImportError('invalid_root', 'Saved output source root must be absolute');
+}
+
+function bundleHasTable(target: DatabaseSync, name: string): boolean {
+  return (
+    target
+      .prepare("SELECT 1 FROM bundle.sqlite_master WHERE type = 'table' AND name = ?")
+      .get(name) !== undefined
+  );
 }
 
 async function pathExists(path: string): Promise<boolean> {

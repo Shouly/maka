@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -27,8 +27,10 @@ import {
   purgeSessionShellRunOutputFiles,
   shellRunOutputFileContent,
   shellRunOutputFilePath,
+  taskOutputRoot,
   writeShellRunOutputFile,
 } from '../shell-run-output-file.js';
+import { linkSavedOutputFile, toolResultSaveTicket } from '../tool-result-file.js';
 
 const ROOTS: string[] = [];
 after(async () => {
@@ -138,5 +140,32 @@ describe('the file a background command writes for the model to read', () => {
     await writeShellRunOutputFile(record({ outputFile }));
     await purgeSessionShellRunOutputFiles(base, 'session-1');
     await assert.rejects(() => readFile(outputFile, 'utf8'), /ENOENT/u);
+  });
+
+  test('lives under the state root, private to the user', async () => {
+    const stateRoot = await root();
+    const tasks = taskOutputRoot(stateRoot);
+    assert.equal(tasks, join(stateRoot, 'tasks'));
+    const outputFile = shellRunOutputFilePath(tasks, 'session-1', 'sr_1');
+    assert.equal(outputFile, join(stateRoot, 'tasks', 'session-1', 'sr_1.output'));
+    await writeShellRunOutputFile(record({ outputFile }));
+    if (process.platform !== 'win32') {
+      assert.equal((await stat(tasks)).mode & 0o777, 0o700);
+      assert.equal((await stat(join(tasks, 'session-1'))).mode & 0o777, 0o700);
+      assert.equal((await stat(outputFile)).mode & 0o777, 0o600);
+    }
+  });
+
+  test('a purge of the folder refuses a copy that started before it', async () => {
+    const base = await root();
+    const source = shellRunOutputFilePath(base, 'session-1', 'sr_1');
+    await writeShellRunOutputFile(record({ outputFile: source }));
+    const ticket = toolResultSaveTicket();
+    await purgeSessionShellRunOutputFiles(base, 'branch');
+    await assert.rejects(
+      linkSavedOutputFile(source, shellRunOutputFilePath(base, 'branch', 'sr_1'), ticket),
+      /retired/u,
+    );
+    assert.deepEqual(await readdir(base), ['session-1']);
   });
 });

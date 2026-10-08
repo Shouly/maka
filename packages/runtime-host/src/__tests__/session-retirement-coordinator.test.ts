@@ -47,7 +47,12 @@ import { SessionAdmissionGate } from '../server/session-admission-gate.js';
 import { SessionOperationLane } from '../server/session-operation-lane.js';
 import { HostSessionRetirementCoordinator } from '../server/session-retirement-coordinator.js';
 import { purgeSessionSidecars } from '../server/session-sidecar-purge.js';
-import { saveToolResultText, toolResultFilePath } from '@maka/runtime/tool-result-file';
+import { taskOutputRoot as taskOutputRootOf } from '@maka/runtime/shell-run-output-file';
+import {
+  saveToolResultText,
+  toolResultFilePath,
+  toolResultRoot as toolResultRootOf,
+} from '@maka/runtime/tool-result-file';
 import { waitFor as pollFor } from '@maka/core/test-only/async-primitives';
 
 const CONNECTION_CONTEXT: ConnectionContext = {
@@ -200,8 +205,9 @@ describe('Host Session retirement coordinator', () => {
   test("takes a retired Session's saved tool results and task output with it, and no one else's", async () => {
     const root = await mkdtemp(join(tmpdir(), 'maka-retired-results-'));
     try {
-      const toolResultRoot = join(root, 'tool-results');
-      const taskOutputRoot = join(root, 'tasks');
+      // The Host's layout: both under its state root.
+      const toolResultRoot = toolResultRootOf(root);
+      const taskOutputRoot = taskOutputRootOf(root);
       await saveToolResultText(toolResultFilePath(toolResultRoot, 'retired', 'call-1'), 'gone');
       await saveToolResultText(toolResultFilePath(toolResultRoot, 'kept', 'call-1'), 'kept');
       await fsPromises.mkdir(join(taskOutputRoot, 'retired'), { recursive: true });

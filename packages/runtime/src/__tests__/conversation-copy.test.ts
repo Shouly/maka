@@ -18,9 +18,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import type { AgentRunStore, EmittedAgentRunEvent } from '@maka/core/agent-run';
@@ -44,12 +44,23 @@ import { createSqliteRuntimeStore } from '@maka/storage/sqlite-runtime-store';
 import {
   cloneConversationRuntimeLedger,
   collectConversationCopyLinkedChildReferences,
+  collectConversationCopySavedOutputPaths,
   collectConversationCopySessionContextRefIds,
   collectConversationCopySessionFileRefs,
+  conversationCopySavedOutputFolders,
+  copyConversationSavedOutputs,
   createConversationCopySlice,
   prepareConversationRuntimeLedgerCopy,
   rewriteConversationCopyMessage,
 } from '../conversation-copy.js';
+import { shellRunOutputFilePath, taskOutputRoot } from '../shell-run-output-file.js';
+import {
+  purgeSessionToolResultFiles,
+  saveToolResultText,
+  toolResultFilePath,
+  toolResultRoot,
+  toolResultSaveTicket,
+} from '../tool-result-file.js';
 import {
   buildHistoryCompactCheckpoint,
   matchHistoryCompactCheckpointPrefix,
@@ -2434,6 +2445,15 @@ test('conversation copy rewrites projection references and carries chained check
   try {
     const runStore = createSqliteAgentRunStore(root);
     const runtimeEventStore = createWorkspaceRuntimeStore(root);
+    const roots = { toolResults: toolResultRoot(root), taskOutputs: taskOutputRoot(root) };
+    // These paths occur only in the summaries, not in the raw transcript.
+    const saved = await saveToolResultText(
+      toolResultFilePath(roots.toolResults, 'session-source', 'summary-only'),
+      'output retained by the summary',
+    );
+    const missing = toolResultFilePath(roots.toolResults, 'session-source', 'missing');
+    const external = toolResultFilePath(roots.toolResults, 'another-session', 'external');
+    const summaryText = `Read ${saved.path}; missing ${missing}; external ${external}.`;
     await seedRun(runtimeEventStore, {
       runId: 'run-source',
       invocationId: 'invocation-source',
@@ -2494,7 +2514,7 @@ test('conversation copy rewrites projection references and carries chained check
     const checkpoint = buildHistoryCompactCheckpoint({
       sessionId: 'session-source',
       coveredRuntimeEvents: compactable.slice(0, 1),
-      summary: sectionedSummary('Unrelated user request summary.'),
+      summary: sectionedSummary(summaryText),
       highWaterName: 'copy-test',
       highWaterSeq: 1,
       now: 8,
@@ -2511,7 +2531,7 @@ test('conversation copy rewrites projection references and carries chained check
     const successor = buildHistoryCompactCheckpoint({
       sessionId: 'session-source',
       coveredRuntimeEvents: compactable,
-      summary: sectionedSummary('Continue with the copied image.'),
+      summary: sectionedSummary(`Continue with the copied image. ${summaryText}`),
       highWaterName: 'copy-test',
       highWaterSeq: 2,
       now: 9,
@@ -2529,8 +2549,79 @@ test('conversation copy rewrites projection references and carries chained check
     const source = await new RuntimeReadModel({ runtimeEventStore }).getSessionView(
       'session-source',
     );
+    const plan = await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore);
+    const collect = (copyPlan: typeof plan) =>
+      collectConversationCopySavedOutputPaths({
+        folders: Object.values(conversationCopySavedOutputFolders(roots, 'session-source')),
+        messages: source.messages,
+        plan: copyPlan,
+      });
+    const named = collect(plan);
+    assert.deepEqual(named, [saved.path, missing].sort());
+    const withCheckpoint = (value: unknown): typeof plan => ({
+      ...plan,
+      runs: plan.runs.map((run) => ({
+        ...run,
+        operationalEvents: [
+          {
+            type: 'history_compact_checkpoint_recorded',
+            id: 'candidate-checkpoint',
+            sessionId: 'session-source',
+            runId: run.run.runId,
+            turnId: run.run.turnId,
+            ts: 9,
+            data: { checkpoint: value },
+          },
+        ],
+      })),
+    });
+    for (const dropped of [
+      { summary: sectionedSummary(summaryText) },
+      { ...checkpoint, source: { ...checkpoint.source, policyVersion: 'retired-policy' } },
+      {
+        ...checkpoint,
+        coverage: { ...checkpoint.coverage, sourceDigest: 'sha256:' + '0'.repeat(64) },
+      },
+      buildHistoryCompactCheckpoint({
+        sessionId: 'session-source',
+        coveredRuntimeEvents: compactable,
+        providerState: {
+          kind: 'openai_codex_remote_v2',
+          connectionId: 'connection-codex-source',
+          modelId: 'gpt-5-codex',
+          itemId: 'cmp-source',
+          encryptedContent: saved.path,
+        },
+      }),
+    ]) {
+      assert.deepEqual(collect(withCheckpoint(dropped)), [], 'dropped checkpoints copy no files');
+    }
+    assert.throws(
+      () => collect(withCheckpoint({ ...checkpoint, summary: saved.path })),
+      /Cannot copy invalid history compact checkpoint/u,
+    );
+    assert.throws(
+      () =>
+        collect({
+          ...plan,
+          runs: plan.runs.map((run) => ({
+            ...run,
+            runtimeEvents: run.runtimeEvents.filter((event) => event.id !== 'event-result'),
+          })),
+        }),
+      /crosses the conversation copy boundary/u,
+    );
+    const savedOutputPaths = await copyConversationSavedOutputs({
+      roots,
+      sourceSessionId: 'session-source',
+      targetSessionId: 'session-target',
+      paths: named,
+      ticket: toolResultSaveTicket(),
+    });
+    const targetPath = toolResultFilePath(roots.toolResults, 'session-target', 'summary-only');
+    assert.deepEqual(savedOutputPaths, new Map([[saved.path, targetPath]]));
     await cloneConversationRuntimeLedger({
-      plan: await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore),
+      plan,
       copiedMessages: source.messages,
       referenceMap: {
         mode: 'exact',
@@ -2540,6 +2631,7 @@ test('conversation copy rewrites projection references and carries chained check
         artifactIds: new Map(),
         relativePaths: new Map(),
         contextRefs: new Map([['image-source', 'image-target']]),
+        savedOutputPaths,
       },
       runStore,
       runtimeEventStore,
@@ -2585,7 +2677,9 @@ test('conversation copy rewrites projection references and carries chained check
       checkpoint: copiedCheckpoint,
     });
     assert.notDeepEqual(replay.events, targetEvents);
-    if (copiedCheckpoint.version === 2) assert.equal(copiedCheckpoint.summary, checkpoint.summary);
+    if (copiedCheckpoint.version === 2) {
+      assert.equal(copiedCheckpoint.summary, checkpoint.summary.replace(saved.path, targetPath));
+    }
     assert.ok(validateHistoryCompactCheckpointShape(copiedSuccessor, 'session-target'));
     assert.equal(copiedSuccessor.previousCheckpointId, copiedCheckpoint.checkpointId);
     assert.equal(
@@ -2595,6 +2689,22 @@ test('conversation copy rewrites projection references and carries chained check
       ).reason,
       undefined,
     );
+    assert.equal(copiedSuccessor.version, 2);
+    if (copiedSuccessor.version === 2) {
+      assert.equal(copiedSuccessor.summary, successor.summary.replace(saved.path, targetPath));
+    }
+    await purgeSessionToolResultFiles(roots.toolResults, 'session-source');
+    assert.equal(await readFile(targetPath, 'utf8'), 'output retained by the summary');
+    const replayText = applyRuntimeEventHistoryCompact(targetEvents, {
+      enabled: true,
+      checkpoint: copiedSuccessor,
+    })
+      .events.map((event) => (event.content?.kind === 'text' ? event.content.text : ''))
+      .join('\n');
+    assert.ok(replayText.includes(targetPath));
+    assert.equal(replayText.includes(saved.path), false);
+    assert.ok(replayText.includes(missing), 'a missing source file keeps its old reference');
+    assert.ok(replayText.includes(external), 'another session is outside the copy');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -2700,6 +2810,284 @@ test('conversation copy gives a run whose opening the migration shelved its open
       ['invocation_opened', 'text', 'completed'],
       'the copy is a fresh sequence, so the opening is its first event',
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('conversation copy carries saved outputs into the target folders and names them there', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'maka-saved-output-copy-'));
+  try {
+    const runStore = createSqliteAgentRunStore(root);
+    const runtimeEventStore = createWorkspaceRuntimeStore(root);
+    const roots = { toolResults: toolResultRoot(root), taskOutputs: taskOutputRoot(root) };
+    const bash = await saveToolResultText(
+      toolResultFilePath(roots.toolResults, 'session-source', 'bash-1'),
+      'the whole bash output',
+    );
+    const mcp = await saveToolResultText(
+      toolResultFilePath(roots.toolResults, 'session-source', 'mcp-1'),
+      'the whole mcp output',
+    );
+    const task = shellRunOutputFilePath(roots.taskOutputs, 'session-source', 'task-1');
+    await mkdir(dirname(task), { recursive: true });
+    await writeFile(task, 'task output\n\n[exited with code 0]\n');
+    // Named, but its file is already gone: the path stays as it was.
+    const gone = toolResultFilePath(roots.toolResults, 'session-source', 'gone-1');
+    // Not in the source's folders at all.
+    const elsewhere = '/var/folders/x/T/maka/tool-results/session-source/old.txt';
+    const pipes = {
+      mode: 'pipes' as const,
+      stdout: 'the whole',
+      stderr: '',
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      redacted: false,
+    };
+    await seedRun(runtimeEventStore, {
+      runId: 'run-source',
+      invocationId: 'invocation-source',
+      turnId: 'turn-1',
+      cwd: root,
+    });
+    const call = (id: string, name: string, args: Record<string, unknown>, ts: number) =>
+      runtimeEvent({
+        id: `event-${id}-call`,
+        ts,
+        role: 'model',
+        author: 'agent',
+        content: { kind: 'function_call', id, name, args },
+      });
+    const response = (
+      id: string,
+      name: string,
+      result: unknown,
+      projectionText: string,
+      ts: number,
+    ) =>
+      runtimeEvent({
+        id: `event-${id}-response`,
+        ts,
+        role: 'tool',
+        author: 'tool',
+        content: {
+          kind: 'function_response',
+          id,
+          name,
+          result,
+          modelProjection: { version: 1, kind: 'text', text: projectionText },
+        },
+      });
+    for (const event of [
+      runtimeEvent({
+        id: 'event-user',
+        role: 'user',
+        author: 'user',
+        content: { kind: 'text', text: 'run things' },
+      }),
+      call('bash-call', 'Bash', { command: `cat ${bash.path}` }, 1.1),
+      response(
+        'bash-call',
+        'Bash',
+        {
+          kind: 'terminal',
+          cwd: root,
+          cmd: 'make',
+          status: 'completed',
+          exitCode: 0,
+          output: pipes,
+          savedOutput: { path: bash.path, chars: bash.chars, truncated: false },
+        },
+        `The full output is saved to ${bash.path}; read it with Read.`,
+        1.2,
+      ),
+      call('mcp-call', 'mcp__srv__fetch', {}, 1.3),
+      response(
+        'mcp-call',
+        'mcp__srv__fetch',
+        { kind: 'json', value: { content: [{ type: 'text', text: `saved to ${mcp.path};` }] } },
+        `saved to ${mcp.path};`,
+        1.4,
+      ),
+      call('task-call', 'Bash', { command: 'sleep 1', run_in_background: true }, 1.5),
+      response(
+        'task-call',
+        'Bash',
+        {
+          kind: 'shell_run',
+          ref: 'maka://runtime/background-tasks/task-1',
+          mode: 'pipes',
+          status: 'running',
+          cwd: root,
+          cmd: 'sleep 1',
+          startedAt: 1,
+          updatedAt: 1,
+          revision: 1,
+          outputFile: task,
+        },
+        `Output is being written to: ${task}. To check interim output, use Read.`,
+        1.6,
+      ),
+      runtimeEvent({
+        id: 'event-notice',
+        ts: 1.7,
+        role: 'user',
+        author: 'system',
+        content: { kind: 'text', text: `<output-file>${task}</output-file>` },
+      }),
+      call('gone-call', 'Bash', { command: 'make again' }, 1.8),
+      response(
+        'gone-call',
+        'Bash',
+        {
+          kind: 'terminal',
+          cwd: root,
+          cmd: 'make again',
+          status: 'completed',
+          exitCode: 0,
+          output: pipes,
+          savedOutput: { path: gone, chars: 10, truncated: false },
+        },
+        `saved to ${gone} and once to ${elsewhere}`,
+        1.9,
+      ),
+      runtimeEvent({ id: 'event-terminal', ts: 7, status: 'completed' }),
+    ])
+      await runtimeEventStore.appendRuntimeEvent('session-source', 'run-source', event);
+    const source = await new RuntimeReadModel({ runtimeEventStore }).getSessionView(
+      'session-source',
+    );
+    const plan = await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore);
+
+    const named = collectConversationCopySavedOutputPaths({
+      folders: Object.values(conversationCopySavedOutputFolders(roots, 'session-source')),
+      messages: source.messages,
+      plan,
+    });
+    assert.deepEqual(named, [bash.path, gone, mcp.path, task].sort());
+    const savedOutputPaths = await copyConversationSavedOutputs({
+      roots,
+      sourceSessionId: 'session-source',
+      targetSessionId: 'session-target',
+      paths: named,
+      ticket: toolResultSaveTicket(),
+    });
+    const target = (path: string, folder: string) => join(folder, 'session-target', basename(path));
+    assert.deepEqual(
+      savedOutputPaths,
+      new Map([
+        [bash.path, target(bash.path, roots.toolResults)],
+        [mcp.path, target(mcp.path, roots.toolResults)],
+        [task, target(task, roots.taskOutputs)],
+      ]),
+      'a file already gone is not copied',
+    );
+    // One file, two names.
+    assert.equal(
+      (await stat(target(bash.path, roots.toolResults))).ino,
+      (await stat(bash.path)).ino,
+    );
+
+    const cloned = await cloneConversationRuntimeLedger({
+      plan,
+      copiedMessages: source.messages,
+      referenceMap: {
+        mode: 'exact',
+        linkedChildren: { mode: 'reject' },
+        sourceSessionId: 'session-source',
+        targetSessionId: 'session-target',
+        artifactIds: new Map(),
+        relativePaths: new Map(),
+        savedOutputPaths,
+      },
+      runStore,
+      runtimeEventStore,
+      newId: () => crypto.randomUUID(),
+    });
+    const [targetRun] = await runtimeEventStore.listSessionInvocations('session-target');
+    const events = await runtimeEventStore.readRuntimeEvents('session-target', targetRun!.runId);
+    const responses = new Map(
+      events.flatMap((event) =>
+        event.content?.kind === 'function_response'
+          ? [[event.content.id, event.content] as const]
+          : [],
+      ),
+    );
+    const responseTo = (id: string) => {
+      const content = responses.get(id);
+      assert.ok(content, id);
+      return content;
+    };
+    const newBash = target(bash.path, roots.toolResults);
+    const newMcp = target(mcp.path, roots.toolResults);
+    const newTask = target(task, roots.taskOutputs);
+    const bashResult = responseTo('bash-call');
+    assert.deepEqual((bashResult.result as { savedOutput?: unknown }).savedOutput, {
+      path: newBash,
+      chars: bash.chars,
+      truncated: false,
+    });
+    assert.deepEqual(bashResult.modelProjection, {
+      version: 1,
+      kind: 'text',
+      text: `The full output is saved to ${newBash}; read it with Read.`,
+    });
+    assert.deepEqual(responses.get('mcp-call')?.result, {
+      kind: 'json',
+      value: { content: [{ type: 'text', text: `saved to ${newMcp};` }] },
+    });
+    assert.deepEqual(responses.get('mcp-call')?.modelProjection, {
+      version: 1,
+      kind: 'text',
+      text: `saved to ${newMcp};`,
+    });
+    assert.equal((responseTo('task-call').result as { outputFile?: unknown }).outputFile, newTask);
+    assert.ok(
+      (responseTo('task-call').modelProjection as { text: string }).text.includes(
+        `written to: ${newTask}.`,
+      ),
+    );
+    const notice = events.find(
+      (event) => event.content?.kind === 'text' && event.author === 'system',
+    );
+    assert.deepEqual(notice?.content, {
+      kind: 'text',
+      text: `<output-file>${newTask}</output-file>`,
+    });
+    // A file that was gone, and a path outside the source's folders, stay as they were.
+    assert.equal(
+      (responseTo('gone-call').result as { savedOutput: { path: string } }).savedOutput.path,
+      gone,
+    );
+    assert.equal(
+      (responseTo('gone-call').modelProjection as { text: string }).text,
+      `saved to ${gone} and once to ${elsewhere}`,
+    );
+    // A tool call is left exactly as it was made.
+    const bashCall = events.find(
+      (event) => event.content?.kind === 'function_call' && event.content.id === 'bash-call',
+    );
+    assert.deepEqual(
+      bashCall?.content?.kind === 'function_call' ? bashCall.content.args : undefined,
+      { command: `cat ${bash.path}` },
+    );
+    // The copied transcript names the target's copy too.
+    const copiedResult = cloned.copiedMessages.find(
+      (message) => message.type === 'tool_result' && message.toolUseId === 'bash-call',
+    );
+    assert.equal(
+      copiedResult?.type === 'tool_result' && copiedResult.content.kind === 'terminal'
+        ? copiedResult.content.savedOutput?.path
+        : undefined,
+      newBash,
+    );
+
+    // The source can go; the target keeps its own.
+    await purgeSessionToolResultFiles(roots.toolResults, 'session-source');
+    await rm(join(roots.taskOutputs, 'session-source'), { recursive: true, force: true });
+    assert.equal(await readFile(newBash, 'utf8'), 'the whole bash output');
+    assert.equal(await readFile(newMcp, 'utf8'), 'the whole mcp output');
+    assert.equal(await readFile(newTask, 'utf8'), 'task output\n\n[exited with code 0]\n');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

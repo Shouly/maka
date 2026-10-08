@@ -107,6 +107,7 @@ export async function importSessionBundle(
     const merged = await importSessionBundleState({
       stateRoot: input.workspaceRoot,
       bundleStateRoot: hydration.stateRoot,
+      ...(typeof manifest?.stateRoot === 'string' ? { sourceStateRoot: manifest.stateRoot } : {}),
       ...(input.lease ? { lease: input.lease } : {}),
     });
     return { ok: true, ...merged, manifest };

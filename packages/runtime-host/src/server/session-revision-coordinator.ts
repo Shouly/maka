@@ -31,14 +31,19 @@ import {
 import {
   cloneConversationRuntimeLedger,
   collectConversationCopyLinkedChildReferences,
+  collectConversationCopySavedOutputPaths,
   collectConversationCopySessionContextRefIds,
   collectConversationCopySessionFileRefs,
+  conversationCopySavedOutputFolders,
+  copyConversationSavedOutputs,
   createConversationCopySlice,
   prepareConversationRuntimeLedgerCopy,
+  type ConversationCopySavedOutputRoots,
   type ConversationCopySlice,
   type ConversationRuntimeLedgerCopyPlan,
 } from '@maka/runtime/conversation-copy';
 import { type SessionManager } from '@maka/runtime/session-manager';
+import { toolResultSaveTicket } from '@maka/runtime/tool-result-file';
 import {
   authenticateInteractiveArtifactStoreWriter,
   type InteractiveArtifactStoreWriter,
@@ -111,6 +116,12 @@ export interface HostSessionRevisionCoordinatorOptions {
   >;
   readonly isSessionActive: (sessionId: string) => boolean;
   readonly requestDrain: () => void;
+  /**
+   * Where saved tool results and background task output live. A copy puts
+   * the files its slice names into the target's own folders, and a discarded
+   * copy takes them away again. Absent, a copy carries none.
+   */
+  readonly savedOutputRoots?: ConversationCopySavedOutputRoots;
 }
 
 /** Host authority for exact, retryable cross-Session branch and revision copies. */
@@ -288,6 +299,9 @@ export class HostSessionRevisionCoordinator {
     lease: SessionAdmissionLease,
     admittedSessionIds: ReadonlySet<string>,
   ): Promise<ConversationCopyOutcome | ConversationCopyAdmissionRetry> {
+    // Taken before anything is read: a retirement of the target that purges
+    // its folders after this moment keeps every saved output out of them.
+    const savedOutputTicket = toolResultSaveTicket();
     const existing = await this.#resolveExistingTarget(kind, input, requestFingerprint, false);
     if (existing) return existing;
 
@@ -519,12 +533,29 @@ export class HostSessionRevisionCoordinator {
             }
           : {}),
       });
+      const savedOutputRoots = this.options.savedOutputRoots;
+      const savedOutputPaths = savedOutputRoots
+        ? await copyConversationSavedOutputs({
+            roots: savedOutputRoots,
+            sourceSessionId: input.sourceSessionId,
+            targetSessionId: input.targetSessionId,
+            paths: collectConversationCopySavedOutputPaths({
+              folders: Object.values(
+                conversationCopySavedOutputFolders(savedOutputRoots, input.sourceSessionId),
+              ),
+              messages: slice.messages,
+              plan,
+            }),
+            ticket: savedOutputTicket,
+          })
+        : new Map<string, string>();
       const references = {
         mode: 'exact' as const,
         sourceSessionId: input.sourceSessionId,
         targetSessionId: input.targetSessionId,
         artifactIds: artifactCopy.artifactIds,
         relativePaths: artifactCopy.relativePaths,
+        savedOutputPaths,
         contextRefs: new Map(
           contextCopy.copied.map(({ sourceRefId, targetRefId }) => [sourceRefId, targetRefId]),
         ),
@@ -765,6 +796,12 @@ export class HostSessionRevisionCoordinator {
         ...(this.options.contextOffload ? { contextOffload: this.options.contextOffload } : {}),
         purgeOperationalState: (sessionId) =>
           this.#stores.purgeConversationOperationalState(sessionId),
+        ...(this.options.savedOutputRoots
+          ? {
+              taskOutputRoot: this.options.savedOutputRoots.taskOutputs,
+              toolResultRoot: this.options.savedOutputRoots.toolResults,
+            }
+          : {}),
       },
       header.id,
     );

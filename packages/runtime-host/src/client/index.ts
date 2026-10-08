@@ -169,6 +169,10 @@ export {
 export { runHostedExecution, type RunHostedExecutionInput } from './hosted-execution.js';
 export { type ClientCapabilityProvider } from './client-capability.js';
 export {
+  fitsClientCapabilityResult,
+  projectMcpClientCapabilityResult,
+} from './client-capability-result.js';
+export {
   readRuntimeHostAgentGraphEpochs,
   type AgentGraphEpochDirectory,
 } from './agent-graph-reader.js';

@@ -20,16 +20,18 @@
 import { createHash } from 'node:crypto';
 import type { McpBoundTool, McpToolBinding } from '@maka/core/mcp';
 import type { McpClientManager } from '@maka/mcp';
-import type { ClientCapabilityProvider } from '@maka/runtime-host/client';
+import {
+  projectMcpClientCapabilityResult,
+  type ClientCapabilityProvider,
+} from '@maka/runtime-host/client';
 import { clientCapabilityEntityId } from '@maka/runtime-host/client-capability-entity-id';
 import {
   CLIENT_CAPABILITY_MAX_TOOLS,
   CLIENT_CAPABILITY_MAX_TOOLS_PER_OFFER,
   decodeClientCapabilityReplaceInput,
-  type ClientCapabilityCallResult,
   type ClientCapabilityOffer,
 } from '@maka/runtime-host/protocol';
-import type { McpCallResult, McpToolDescriptor } from '@maka/core/mcp';
+import type { McpToolDescriptor } from '@maka/core/mcp';
 
 const CAPABILITY_VERSION = '0';
 
@@ -106,11 +108,12 @@ export function createMcpCapabilityProvider(
       );
       if (!binding) throw new Error('MCP capability is not part of the published snapshot');
       await options.accept({ kind: 'none' });
-      return projectMcpResult(
+      return projectMcpClientCapabilityResult(
         await manager.callTool(binding, frame.arguments, {
           signal: options.signal,
           requestInteraction: options.requestInteraction,
         }),
+        'CLI',
       );
     },
   };
@@ -123,15 +126,6 @@ function projectMcpTool(tool: McpToolDescriptor, wireServerId: string) {
     ...(tool.description ? { description: tool.description } : {}),
     inputSchema: structuredClone(tool.inputSchema),
     ...(tool.annotations ? { annotations: { ...tool.annotations } } : {}),
-  };
-}
-
-function projectMcpResult(result: McpCallResult): ClientCapabilityCallResult {
-  return {
-    content: result.content.map((block) => structuredClone(block)),
-    ...(result.structuredContent === undefined
-      ? {}
-      : { structuredContent: structuredClone(result.structuredContent) }),
   };
 }
 
