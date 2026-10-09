@@ -35,6 +35,7 @@ import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { markPersisted } from '@maka/core/persisted-value';
 import type { StoredMessage } from '@maka/core/session';
 import { decodePersistedToolResultContent } from '@maka/core/tool-result-record-schema';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { isEmittedAgentRunEventType } from '@maka/core/agent-run';
 import {
   decodeModelCallAttempt,
@@ -66,7 +67,10 @@ import {
   type SavedOutputPathRewrite,
 } from '@maka/core/saved-output-paths';
 import { dirname } from 'node:path';
-import { rewriteDurableToolResultProjectionArtifactRefs } from './durable-tool-result-projection.js';
+import {
+  encodeDurableToolResultOutput,
+  rewriteDurableToolResultProjectionArtifactRefs,
+} from './durable-tool-result-projection.js';
 import { sendUserFileModelText } from './send-user-file-tool.js';
 import { taskOutputSessionFolder } from './shell-run-output-file.js';
 import {
@@ -867,14 +871,18 @@ function cloneAgentRunEvent(
       clonedRuntimeEvents,
     );
     if (!selected) return null;
-    // A summary may spell an old notification Artifact id in arbitrary prose.
+    // A summary may spell an old delivery or notification Artifact id in arbitrary prose.
     // Keep its canonical events and let the target compact again instead of
     // re-authenticating that stale summary against rewritten notifications.
     if (
       references.mode === 'exact' &&
-      collectConversationCopyChildNotifications(selected.coveredRuntimeEvents).some(
-        (notification) => notification.artifactIds.some((id) => references.artifactIds.has(id)),
-      )
+      (selected.coveredRuntimeEvents.some(
+        (event) =>
+          event.content?.kind === 'function_response' && readFileDelivery(event.content.result),
+      ) ||
+        collectConversationCopyChildNotifications(selected.coveredRuntimeEvents).some(
+          (notification) => notification.artifactIds.some((id) => references.artifactIds.has(id)),
+        ))
     )
       return null;
     const sourceCheckpoint = selected.checkpoint;
@@ -1242,6 +1250,7 @@ function rewriteRuntimeEventReferences(
                       rewriteDeliveryModelProjection(
                         event.content.modelProjection,
                         event.content.result,
+                        event.content.name,
                         references,
                       ),
                       (ref) => rewriteProjectionArtifactRef(ref, references),
@@ -1386,13 +1395,24 @@ function rewriteToolResultContent(
     return { ...content, ref: rewriteStorageRef(content.ref, references) };
   }
   if (content.kind === 'user_file_delivery') {
-    return {
-      ...content,
-      files: content.files.map((file) => ({
-        ...file,
-        artifactId: rewriteOwnedArtifactId(file.artifactId, references),
-      })),
-    };
+    if (references.mode === 'preserve_external') return content;
+    // Delivered files are user-deletable, while their historical receipt is immutable.
+    const files = content.files.flatMap((file) => {
+      const artifactId = reclaimableArtifactReference(file.artifactId, references);
+      return artifactId ? [{ ...file, artifactId }] : [];
+    });
+    // A delivery must contain at least one file. Keep a readable notice when
+    // every target is gone instead of persisting an invalid empty delivery.
+    if (files.length === 0) {
+      return {
+        kind: 'text',
+        text: 'The files from this earlier delivery are no longer available in this conversation.',
+      };
+    }
+    return rewriteToolResultContentSavedOutputPaths(
+      { ...content, files },
+      savedOutputRewrite(references),
+    );
   }
   if (content.kind === 'subagent') {
     if (linkedChildrenAreSnapshots(references) && content.childSessionId) {
@@ -1466,23 +1486,40 @@ function rewriteToolResultContent(
 function rewriteDeliveryModelProjection(
   projection: DurableToolResultProjection,
   result: unknown,
+  toolName: string,
   references: ConversationCopyMessageReferenceMap,
 ): DurableToolResultProjection {
-  if (references.mode !== 'exact' || projection.kind !== 'text') return projection;
-  let content: ToolResultContent;
+  if (
+    references.mode !== 'exact' ||
+    toolName !== TOOL_NAMES.sendUserFile ||
+    projection.kind !== 'text' ||
+    projection.isError
+  )
+    return projection;
+  const content = readFileDelivery(result);
+  if (!content) return projection;
+  // The builtin receipt is derived from its typed delivery, never matched
+  // against historical text whose saved-output paths may already have moved.
+  // Other tools and failure/error projections keep their own model contract.
+  const rewritten = rewriteToolResultContent(content, references);
+  return encodeDurableToolResultOutput(
+    {
+      type: 'text',
+      value: rewritten.kind === 'text' ? rewritten.text : sendUserFileModelText(rewritten),
+    },
+    references.targetSessionId,
+  );
+}
+
+function readFileDelivery(
+  value: unknown,
+): Extract<ToolResultContent, { kind: 'user_file_delivery' }> | undefined {
   try {
-    content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(result));
+    const content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(value));
+    return content.kind === 'user_file_delivery' ? content : undefined;
   } catch {
-    return projection;
+    return undefined;
   }
-  // Custom projections are opaque; only regenerate the receipt this tool produced.
-  if (content.kind !== 'user_file_delivery' || projection.text !== sendUserFileModelText(content)) {
-    return projection;
-  }
-  return {
-    ...projection,
-    text: sendUserFileModelText(rewriteToolResultContent(content, references)),
-  };
 }
 
 function rewriteRuntimeToolResult(

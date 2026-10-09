@@ -20,13 +20,50 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RuntimeEvent } from '../runtime-event.js';
+import type { ToolResultContent } from '../events.js';
 import {
   rewriteRuntimeEventSavedOutputPaths,
+  rewriteToolResultContentSavedOutputPaths,
   savedOutputPathMapRewrite,
+  savedOutputPathRecorder,
   savedOutputPathRewrite,
 } from '../saved-output-paths.js';
 
 const FOLDER = '/state/tool-results/session-a';
+
+test('delivery paths participate in saved-output collection and rewriting', () => {
+  const path = `${FOLDER}/r-1.txt`;
+  const delivery: ToolResultContent = {
+    kind: 'user_file_delivery',
+    status: 'normal',
+    display: 'attach',
+    files: [path, '/workspace/report.md'].map((path, index) => ({
+      artifactId: `file-${index}`,
+      name: 'report.txt',
+      path,
+      kind: 'file',
+      sizeBytes: 10,
+    })),
+  };
+  const found = new Set<string>();
+  assert.equal(
+    rewriteToolResultContentSavedOutputPaths(delivery, savedOutputPathRecorder([FOLDER], found)),
+    delivery,
+  );
+  assert.deepEqual([...found], [path]);
+  const rewritten = rewriteToolResultContentSavedOutputPaths(
+    delivery,
+    savedOutputPathMapRewrite(new Map([[path, '/state/tool-results/target/r-1.txt']])),
+  );
+  assert.ok(rewritten.kind === 'user_file_delivery');
+  assert.deepEqual(
+    rewritten.files.map((file) => file.path),
+    ['/state/tool-results/target/r-1.txt', '/workspace/report.md'],
+  );
+  assert.equal(rewritten.files[0]!.artifactId, 'file-0');
+  assert.equal(rewritten.files[1], delivery.files[1]);
+  assert.equal(delivery.files[0]!.path, path, 'source metadata is immutable');
+});
 
 test('a saved-output path is matched whole, and only in the folders given', () => {
   const rewrite = savedOutputPathRewrite([FOLDER], (path) => path.replace('session-a', 'b'));

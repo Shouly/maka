@@ -109,6 +109,15 @@ export function rewriteToolResultContentSavedOutputPaths(
   rewrite: SavedOutputPathRewrite,
 ): ToolResultContent {
   switch (content.kind) {
+    case 'user_file_delivery': {
+      const files = content.files.map((file) => {
+        const path = rewrite(file.path);
+        return path === file.path ? file : { ...file, path };
+      });
+      return files.every((file, index) => file === content.files[index])
+        ? content
+        : { ...content, files };
+    }
     case 'terminal': {
       if (!content.savedOutput) return content;
       const path = rewrite(content.savedOutput.path);

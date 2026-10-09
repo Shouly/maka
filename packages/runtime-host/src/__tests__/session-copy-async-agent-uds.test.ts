@@ -177,11 +177,15 @@ test('Agent and delivered file cards survive branch, edit resend and side conver
           );
         } else {
           assert.ok(notification.text.includes(`<artifacts>${REPORT}</artifacts>`));
-          assert.ok(
-            await stores.agentRunStore.readEventProjection?.(
-              sessionId,
-              'history_compact_checkpoint_recorded',
+          assert.equal(
+            Boolean(
+              await stores.agentRunStore.readEventProjection?.(
+                sessionId,
+                'history_compact_checkpoint_recorded',
+              ),
             ),
+            sessionId === fixture.sessionId,
+            'source keeps its summary; the revision rebuilds it after delivery ids change',
           );
         }
       }

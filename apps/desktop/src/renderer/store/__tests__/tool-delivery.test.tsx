@@ -204,6 +204,19 @@ test('a file delivery routes to its own renderer and never opens as a tool row',
   assert.equal(toolStepLabel(item, 'en').text, 'Shared 2 files');
 });
 
+test('an unavailable copied delivery renders a readable notice instead of file cards', () => {
+  const text = 'The files from this earlier delivery are no longer available in this conversation.';
+  const item = call({
+    toolUseId: 'copied-delivery',
+    toolName: 'SendUserFile',
+    result: { kind: 'text', text } as never,
+  });
+  assert.equal(resolveToolRendererId(item), 'text');
+  const document = renderTree(createElement(Fragment, null, renderToolContent(item, CONTEXT)));
+  assert.ok(document.documentElement.textContent?.includes(text));
+  assert.equal(document.querySelector('[data-maka-file-delivery]'), null);
+});
+
 test('a delivery draws one row card per file: a sentence, a kind line, and nothing else', () => {
   const item = call({
     toolUseId: 'send-files',

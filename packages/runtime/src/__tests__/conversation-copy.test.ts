@@ -270,9 +270,26 @@ test('conversation copies collect and rewrite delivered file handles without cha
     rewriteConversationCopyMessage(message, { ...references, mode: 'preserve_external' }),
     message,
   );
-  assert.throws(
-    () => rewriteConversationCopyMessage(message, { ...references, artifactIds: new Map() }),
-    /missing Artifact first/,
+  const partial = rewriteConversationCopyMessage(message, {
+    ...references,
+    artifactIds: new Map([['second', 'copy-second']]),
+  });
+  assert.ok(partial.type === 'tool_result');
+  assert.deepEqual(partial.content, {
+    ...content,
+    files: [{ ...content.files[1]!, artifactId: 'copy-second' }],
+  });
+  const removed = rewriteConversationCopyMessage(message, {
+    ...references,
+    artifactIds: new Map(),
+  });
+  assert.ok(removed.type === 'tool_result' && removed.content.kind === 'text');
+  assert.match(removed.content.text, /no longer available/);
+  assert.deepEqual(decodeCanonicalToolResultContent(removed.content), removed.content);
+  assert.deepEqual(
+    rewriteConversationCopyMessage(removed, references),
+    removed,
+    'an unavailable-file notice survives another copy',
   );
 });
 
