@@ -30,6 +30,7 @@ import {
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import type { RuntimeEventStore } from '@maka/core/runtime-event-store';
 import { type StorageRef, type ToolResultContent } from '@maka/core/events';
+import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
 import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { markPersisted } from '@maka/core/persisted-value';
 import type { StoredMessage } from '@maka/core/session';
@@ -66,6 +67,7 @@ import {
 } from '@maka/core/saved-output-paths';
 import { dirname } from 'node:path';
 import { rewriteDurableToolResultProjectionArtifactRefs } from './durable-tool-result-projection.js';
+import { sendUserFileModelText } from './send-user-file-tool.js';
 import { taskOutputSessionFolder } from './shell-run-output-file.js';
 import {
   collectConversationCopyChildNotifications,
@@ -173,6 +175,7 @@ export interface ConversationRuntimeLedgerCopyPlan {
 }
 
 interface ConversationCopyStorageReferenceInput {
+  readonly sourceSessionId: string;
   readonly messages: readonly StoredMessage[];
   readonly runtimeEvents: readonly RuntimeEvent[];
 }
@@ -184,6 +187,16 @@ function collectConversationCopyStorageRefs(
   const refs: StorageRef[] = [];
   const addContent = (content: ToolResultContent): void => {
     if (content.kind === 'image') refs.push(content.ref);
+    // Delivery cards carry a bare Artifact id, implicitly owned by this Session.
+    if (content.kind === 'user_file_delivery') {
+      for (const file of content.files) {
+        refs.push({
+          kind: 'session_file',
+          sessionId: input.sourceSessionId,
+          relativePath: file.artifactId,
+        });
+      }
+    }
   };
   const addSerialized = (value: unknown): void => {
     try {
@@ -800,7 +813,7 @@ export function collectConversationCopyLinkedChildReferences(input: {
  * set to `copyConversationArtifacts` as an explicit same-Session include list so
  * their refs resolve in `rewriteStorageRef`. Walks exactly the ref sites reached
  * by `rewriteStorageRef`: user-message attachments, tool_result image refs, text
- * runtime-event attachments, and function_response images.
+ * runtime-event attachments, function_response images, and delivered file handles.
  */
 export function collectConversationCopySessionFileRefs(input: {
   readonly sourceSessionId: string;
@@ -1226,7 +1239,11 @@ function rewriteRuntimeEventReferences(
               ? {
                   modelProjection: rewriteDurableToolResultProjectionSavedOutputPaths(
                     rewriteDurableToolResultProjectionArtifactRefs(
-                      event.content.modelProjection,
+                      rewriteDeliveryModelProjection(
+                        event.content.modelProjection,
+                        event.content.result,
+                        references,
+                      ),
                       (ref) => rewriteProjectionArtifactRef(ref, references),
                     ),
                     savedOutputs,
@@ -1368,6 +1385,15 @@ function rewriteToolResultContent(
   if (content.kind === 'image') {
     return { ...content, ref: rewriteStorageRef(content.ref, references) };
   }
+  if (content.kind === 'user_file_delivery') {
+    return {
+      ...content,
+      files: content.files.map((file) => ({
+        ...file,
+        artifactId: rewriteOwnedArtifactId(file.artifactId, references),
+      })),
+    };
+  }
   if (content.kind === 'subagent') {
     if (linkedChildrenAreSnapshots(references) && content.childSessionId) {
       const { childSessionId: _childSessionId, runId: _runId, ...snapshot } = content;
@@ -1434,6 +1460,29 @@ function rewriteToolResultContent(
     };
   }
   return rewriteToolResultContentSavedOutputPaths(content, savedOutputRewrite(references));
+}
+
+/** Keep the producer's model receipt consistent with the copied delivery cards. */
+function rewriteDeliveryModelProjection(
+  projection: DurableToolResultProjection,
+  result: unknown,
+  references: ConversationCopyMessageReferenceMap,
+): DurableToolResultProjection {
+  if (references.mode !== 'exact' || projection.kind !== 'text') return projection;
+  let content: ToolResultContent;
+  try {
+    content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(result));
+  } catch {
+    return projection;
+  }
+  // Custom projections are opaque; only regenerate the receipt this tool produced.
+  if (content.kind !== 'user_file_delivery' || projection.text !== sendUserFileModelText(content)) {
+    return projection;
+  }
+  return {
+    ...projection,
+    text: sendUserFileModelText(rewriteToolResultContent(content, references)),
+  };
 }
 
 function rewriteRuntimeToolResult(

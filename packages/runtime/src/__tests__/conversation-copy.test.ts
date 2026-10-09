@@ -203,6 +203,79 @@ test('collectConversationCopySessionFileRefs gathers source-Session refs across 
   ]);
 });
 
+test('conversation copies collect and rewrite delivered file handles without changing source paths', () => {
+  const content = {
+    kind: 'user_file_delivery' as const,
+    status: 'normal' as const,
+    display: 'attach' as const,
+    files: ['first', 'second'].map((artifactId) => ({
+      artifactId,
+      name: 'report.md',
+      path: `/tmp/${artifactId}/report.md`,
+      kind: 'file' as const,
+      sizeBytes: 10,
+    })),
+  };
+  const message: Extract<StoredMessage, { type: 'tool_result' }> = {
+    type: 'tool_result',
+    id: 'delivery-result',
+    turnId: 'turn-1',
+    ts: 1,
+    toolUseId: 'delivery-call',
+    isError: false,
+    content,
+  };
+  const runtimeEvent = {
+    content: {
+      kind: 'function_response',
+      id: 'delivery-call',
+      name: 'SendUserFile',
+      result: content,
+    },
+  } as RuntimeEvent;
+  for (const sites of [
+    { messages: [message], runtimeEvents: [] },
+    { messages: [], runtimeEvents: [runtimeEvent] },
+  ]) {
+    assert.deepEqual(
+      [...collectConversationCopySessionFileRefs({ sourceSessionId: 'source', ...sites })].sort(),
+      ['first', 'second'],
+    );
+  }
+  const references = {
+    mode: 'exact' as const,
+    sourceSessionId: 'source',
+    targetSessionId: 'target',
+    artifactIds: new Map([
+      ['first', 'copy-first'],
+      ['second', 'copy-second'],
+    ]),
+    relativePaths: new Map<string, string>(),
+    runIds: new Map<string, string>(),
+    runtimeEventIds: new Map<string, string>(),
+    providerTraceIds: new Map<string, string>(),
+    linkedChildren: { mode: 'reject' as const },
+  };
+  const rewritten = rewriteConversationCopyMessage(message, references);
+  assert.ok(rewritten.type === 'tool_result');
+  assert.deepEqual(rewritten.content, {
+    ...content,
+    files: content.files.map((file) => ({ ...file, artifactId: `copy-${file.artifactId}` })),
+  });
+  assert.deepEqual(
+    content.files.map((file) => file.artifactId),
+    ['first', 'second'],
+  );
+  assert.deepEqual(
+    rewriteConversationCopyMessage(message, { ...references, mode: 'preserve_external' }),
+    message,
+  );
+  assert.throws(
+    () => rewriteConversationCopyMessage(message, { ...references, artifactIds: new Map() }),
+    /missing Artifact first/,
+  );
+});
+
 test('Side Conversation snapshots remove linked child ownership identifiers', () => {
   const message: Extract<StoredMessage, { readonly type: 'tool_result' }> = {
     type: 'tool_result',

@@ -19,10 +19,13 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
 import { renderChildAgentNotification } from '@maka/runtime/injection';
 import { buildSubagentSpawnTool, startedChildAgentText } from '@maka/runtime/subagent-tools';
+import { buildSendUserFileTool, sendUserFileModelText } from '@maka/runtime/send-user-file-tool';
 import { seedInvocation } from '@maka/runtime/test-only/invocation-fixture';
 import { openInteractiveExecutionStoresForWrite } from '@maka/storage/execution-stores';
 import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
@@ -34,18 +37,28 @@ import {
   type ExecutionFixture,
 } from './fixtures/execution-host-suite.js';
 import { readLedgerMessages } from './fixtures/ledger-transcript.js';
+import { createHostExecutionArtifactServices } from '../server/execution-artifacts.js';
+import { SessionAdmissionGate } from '../server/session-admission-gate.js';
 
 const BRANCH = 'async-agent-branch';
 const REVISION = 'async-agent-revision';
 const SIDE = 'async-agent-side';
 const REPORT = 'async-agent-report';
 const REPORT_BYTES = 'The delivered report file.';
+const DELIVERED_FILES = [
+  { path: 'outside/report.md', bytes: Buffer.from('OUTER') },
+  { path: 'inside/report.md', bytes: Buffer.from('INNER') },
+  { path: '中文 附件.json', bytes: Buffer.from('{"测试":true}') },
+  { path: 'payload.bin', bytes: Buffer.from([0, 255, 128, 13, 10]) },
+  { path: 'empty.txt', bytes: Buffer.alloc(0) },
+];
 
-test('a completed async Agent permits branch, edit resend and side conversation through the Host', {
+test('Agent and delivered file cards survive branch, edit resend and side conversation through the Host', {
   skip: process.platform === 'win32' ? 'Windows SQLite shutdown lifecycle' : false,
   timeout: 120_000,
 }, async () => {
   await withExecutionRoot(async (fixture) => {
+    const deliveryCards = new Map<string, readonly string[]>();
     const childId = await seedAsyncAgent(fixture);
     const host = await fixture.startHost();
     const client = await connectClient(fixture.root);
@@ -94,6 +107,42 @@ test('a completed async Agent permits branch, edit resend and side conversation 
               entry.type === 'user' && entry.text.includes('The delegated report is complete.'),
           ),
         );
+        const delivery = messages.find(
+          (entry) => entry.type === 'tool_result' && entry.toolUseId === 'delivery-call',
+        );
+        assert.ok(
+          delivery?.type === 'tool_result' && delivery.content.kind === 'user_file_delivery',
+        );
+        assert.equal(delivery.content.files.length, DELIVERED_FILES.length);
+        deliveryCards.set(
+          sessionId,
+          delivery.content.files.map((file) => file.artifactId),
+        );
+        for (const [index, file] of delivery.content.files.entries()) {
+          const read = await artifacts.readChunkInSession(sessionId, file.artifactId, {
+            offset: 0,
+            maxBytes: 100,
+          });
+          assert.ok(read.ok, `delivery card ${file.name} must resolve in ${sessionId}`);
+          assert.deepEqual(Buffer.from(read.bytes), DELIVERED_FILES[index]!.bytes);
+        }
+        let receipts = 0;
+        for (const invocation of await stores.runtimeEventStore.listSessionInvocations(sessionId)) {
+          for (const event of await stores.runtimeEventStore.readRuntimeEvents(
+            sessionId,
+            invocation.invocationId,
+          )) {
+            if (event.content?.kind !== 'function_response' || event.content.id !== 'delivery-call')
+              continue;
+            receipts += 1;
+            assert.deepEqual(event.content.modelProjection, {
+              version: 1,
+              kind: 'text',
+              text: sendUserFileModelText(delivery.content),
+            });
+          }
+        }
+        assert.equal(receipts, 1, 'the model receipt is checked as well as the delivery card');
         assert.equal(
           messages.some((entry) => entry.turnId === 'after-agent'),
           sessionId !== REVISION,
@@ -105,8 +154,12 @@ test('a completed async Agent permits branch, edit resend and side conversation 
         assert.ok(notification?.type === 'user');
         if (snapshot) {
           const page = await artifacts.listPage(sessionId, { offset: 0, limit: 10 });
-          assert.equal(page.total, 1, 'only the notified file is copied');
-          const copiedId = page.records[0]!.id;
+          assert.equal(
+            page.total,
+            6,
+            'the five deliveries and only the notified child file are copied',
+          );
+          const copiedId = page.records.find((record) => record.name === `${REPORT}.txt`)!.id;
           assert.notEqual(copiedId, REPORT);
           assert.ok(notification.text.includes(`<artifacts>${copiedId}</artifacts>`));
           assert.deepEqual(await artifacts.readTextInSession(sessionId, copiedId), {
@@ -178,6 +231,16 @@ test('a completed async Agent permits branch, edit resend and side conversation 
         'removed',
       );
       for (const sourceSessionId of [BRANCH, SIDE]) {
+        for (const [index, artifactId] of deliveryCards.get(sourceSessionId)!.entries()) {
+          const read = await remover.request('artifact.query', {
+            kind: 'read_chunk',
+            sessionId: sourceSessionId,
+            artifactId,
+            offset: 0,
+          });
+          assert.ok(read.kind === 'chunk');
+          assert.deepEqual(Buffer.from(read.chunkBase64, 'base64'), DELIVERED_FILES[index]!.bytes);
+        }
         assert.equal(
           (
             await remover.request('session.branch.create', {
@@ -192,11 +255,11 @@ test('a completed async Agent permits branch, edit resend and side conversation 
         for (const sessionId of [sourceSessionId, `${sourceSessionId}-again`]) {
           const page = await remover.request('artifact.query', { kind: 'list_start', sessionId });
           assert.ok(page.kind === 'page');
-          assert.equal(page.artifacts.length, 1);
+          assert.equal(page.artifacts.length, 6);
           const read = await remover.request('artifact.query', {
             kind: 'read_chunk',
             sessionId,
-            artifactId: page.artifacts[0]!.id,
+            artifactId: page.artifacts.find((record) => record.name === `${REPORT}.txt`)!.id,
             offset: 0,
           });
           assert.ok(read.kind === 'chunk');
@@ -255,6 +318,42 @@ async function seedAsyncAgent(fixture: ExecutionFixture): Promise<string> {
     });
     const childId = child.header.id;
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+    const files = await Promise.all(
+      DELIVERED_FILES.map(async ({ path, bytes }) => {
+        const target = join(fixture.root, 'delivery', path);
+        await mkdir(join(target, '..'), { recursive: true });
+        await writeFile(target, bytes);
+        return target;
+      }),
+    );
+    const deliveryServices = createHostExecutionArtifactServices({
+      artifacts,
+      sessionAdmission: new SessionAdmissionGate(),
+      sessions: { probeSessionRemoval: async () => ({ kind: 'present' }) },
+      requestDrain: () => assert.fail('delivery setup must not drain the Host'),
+    });
+    const delivery = await buildSendUserFileTool().impl(
+      { files, status: 'normal' },
+      {
+        sessionId: fixture.sessionId,
+        turnId: 'agent-turn',
+        cwd: fixture.root,
+        toolCallId: 'delivery-call',
+        abortSignal: new AbortController().signal,
+        emitOutput() {},
+        recordArtifacts: (candidates) =>
+          deliveryServices.recordToolArtifacts({
+            sessionId: fixture.sessionId,
+            turnId: 'agent-turn',
+            toolUseId: 'delivery-call',
+            toolName: 'SendUserFile',
+            cwd: fixture.root,
+            args: { files, status: 'normal' },
+            result: undefined,
+            candidates: [...candidates],
+          }),
+      },
+    );
     for (const id of [REPORT, 'unnotified-report']) {
       await artifacts.create({
         id,
@@ -326,6 +425,28 @@ async function seedAsyncAgent(fixture: ExecutionFixture): Promise<string> {
     await appendRun(childId, 'child-run', 'child-turn', [user('Do the work'), end]);
     await appendRun(fixture.sessionId, 'agent-run', 'agent-turn', [
       user('Delegate this'),
+      {
+        role: 'model',
+        author: 'agent',
+        content: {
+          kind: 'function_call',
+          id: 'delivery-call',
+          name: 'SendUserFile',
+          args: { files, status: 'normal' },
+        },
+      },
+      {
+        role: 'tool',
+        author: 'tool',
+        content: {
+          kind: 'function_response',
+          id: 'delivery-call',
+          name: 'SendUserFile',
+          result: delivery,
+          isError: false,
+          modelProjection: { version: 1, kind: 'text', text: sendUserFileModelText(delivery) },
+        },
+      },
       {
         role: 'model',
         author: 'agent',
