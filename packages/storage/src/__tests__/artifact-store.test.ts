@@ -110,6 +110,90 @@ function closeArtifactStores(root: string): void {
 }
 
 describe('SQLite Artifact store', () => {
+  test('a batch publishes ordered records only after all payloads are ready', async () => {
+    await withWorkspace(async (root) => {
+      const store = createArtifactStore(root);
+      const observer = createArtifactStore(root);
+      const records = await store.createBatch([
+        { ...artifactInput('batch-a', '', 1), name: 'same.txt', readContent: async () => 'first' },
+        {
+          ...artifactInput('batch-b', '', 2),
+          name: 'same.txt',
+          readContent: async () => {
+            assert.equal((await listArtifacts(observer, 'session-1')).length, 0);
+            return 'second';
+          },
+        },
+      ]);
+      assert.deepEqual(
+        records.map((record) => record.id),
+        ['batch-a', 'batch-b'],
+      );
+      assert.deepEqual(await readArtifactText(observer, 'batch-a'), { ok: true, text: 'first' });
+      assert.deepEqual(await readArtifactText(observer, 'batch-b'), { ok: true, text: 'second' });
+    });
+  });
+
+  test('a late batch read failure rolls back files and records, including after reopen', async () => {
+    await withWorkspace(async (root) => {
+      const store = createArtifactStore(root);
+      await assert.rejects(
+        store.createBatch([
+          { ...artifactInput('batch-a', '', 1), readContent: async () => 'first' },
+          {
+            ...artifactInput('batch-b', '', 2),
+            readContent: async () => {
+              throw new Error('source refused');
+            },
+          },
+        ]),
+        /source refused/,
+      );
+      assert.deepEqual(await listArtifacts(createArtifactStore(root), 'session-1'), []);
+      assert.deepEqual(await readdir(join(root, 'artifacts', 'session-1')), []);
+    });
+  });
+
+  test('a batch storage failure removes staged files and preserves pre-existing paths', async () => {
+    await withWorkspace(async (root) => {
+      const store = createArtifactStore(root);
+      const collision = join(root, 'artifacts', 'session-1', 'batch-b-batch-b.txt');
+      await mkdir(collision, { recursive: true });
+      await assert.rejects(
+        store.createBatch([
+          { ...artifactInput('batch-a', '', 1), readContent: async () => 'first' },
+          { ...artifactInput('batch-b', '', 2), readContent: async () => 'second' },
+        ]),
+        { code: 'EEXIST' },
+      );
+      assert.deepEqual(await listArtifacts(createArtifactStore(root), 'session-1'), []);
+      assert.deepEqual(await readdir(join(root, 'artifacts', 'session-1')), [
+        'batch-b-batch-b.txt',
+      ]);
+      assert.ok((await stat(collision)).isDirectory());
+    });
+  });
+
+  test('a batch validates every identity before reading or publishing any content', async () => {
+    await withWorkspace(async (root) => {
+      const store = createArtifactStore(root);
+      let reads = 0;
+      const readContent = async () => {
+        reads += 1;
+        return 'bytes';
+      };
+      const input = { ...artifactInput('duplicate', '', 1), readContent };
+      await assert.rejects(store.createBatch([input, input]), /Duplicate Artifact identity/);
+      assert.equal(reads, 0);
+      await store.create(artifactInput('existing', 'original', 1));
+      await assert.rejects(
+        store.createBatch([{ ...input, id: 'existing' }]),
+        /requires new identities/,
+      );
+      assert.equal(reads, 0);
+      assert.deepEqual(await readArtifactText(store, 'existing'), { ok: true, text: 'original' });
+    });
+  });
   test('creates a missing workspace root before acquiring the writer lock', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'maka-artifact-missing-root-'));
     const root = join(parent, 'nested', 'workspace');

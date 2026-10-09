@@ -22,6 +22,7 @@ import { open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import type { ArtifactRecord } from '@maka/core/artifacts';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
+import { TOOL_NAMES } from '@maka/core/tool-names';
 import { isPathInside } from '@maka/runtime/path-containment';
 import { type ToolArtifactRecorderInput } from '@maka/runtime/tool-artifacts';
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
@@ -31,11 +32,9 @@ import type { SessionPresenceReader } from './session-presence.js';
 
 export interface HostExecutionArtifactServices {
   /**
-   * Publish the candidates a tool call produced and answer with the records
-   * that were actually stored, in candidate order. A candidate whose bytes
-   * cannot be read or are over the attachment cap is skipped, so the answer may
-   * be shorter than the request: a caller that needs the ids (SendUserFile)
-   * matches the two lists rather than assuming they line up one to one.
+   * Explicit SendUserFile delivery publishes the complete batch atomically
+   * and returns records in candidate order. Automatically derived artifacts
+   * remain best effort: unreadable or oversized candidates are skipped.
    */
   recordToolArtifacts(event: ToolArtifactRecorderInput): Promise<ArtifactRecord[]>;
   publishChildWorkspacePatch: NonNullable<SessionManagerDeps['publishChildWorkspacePatch']>;
@@ -66,6 +65,53 @@ export function createHostExecutionArtifactServices(input: {
   const recordToolArtifacts = async (
     event: ToolArtifactRecorderInput,
   ): Promise<ArtifactRecord[]> => {
+    if (event.toolName === TOOL_NAMES.sendUserFile) {
+      // The delivery tool owns the authorised reads. Do not reopen its paths
+      // here under Host authority or silently skip any member of the batch.
+      const sourceFailures = new Set<unknown>();
+      const batch = event.candidates.map((candidate) => {
+        const readContent = candidate.readContent;
+        if (candidate.source !== 'user_delivery' || !readContent) {
+          throw new Error('File delivery requires an authorised content reader');
+        }
+        return {
+          sessionId: event.sessionId,
+          turnId: event.turnId,
+          name: candidate.name,
+          kind: candidate.kind,
+          source: candidate.source,
+          ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+          ...(candidate.summary ? { summary: candidate.summary } : {}),
+          readContent: async () => {
+            try {
+              const content = await readContent();
+              if (contentBytes(content) > MAX_ATTACHMENT_BYTES) {
+                throw new Error(
+                  `Attachment "${candidate.name}" exceeds the ${MAX_ATTACHMENT_BYTES}-byte size limit.`,
+                );
+              }
+              return content;
+            } catch (error) {
+              sourceFailures.add(error);
+              throw error;
+            }
+          },
+        };
+      });
+      return input.sessionAdmission.runOrJoin(event.sessionId, async () => {
+        if ((await input.sessions.probeSessionRemoval(event.sessionId)).kind !== 'present') {
+          throw new Error('The Session was removed before file delivery; no files were delivered.');
+        }
+        try {
+          return await input.artifacts.createBatch(batch);
+        } catch (error) {
+          // An unreadable/denied source is an ordinary tool failure. Only a
+          // storage or rollback failure should drain the Host.
+          if (!sourceFailures.has(error)) input.requestDrain();
+          throw error;
+        }
+      });
+    }
     const recorded: ArtifactRecord[] = [];
     for (const candidate of event.candidates) {
       let content = candidate.content;

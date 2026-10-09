@@ -19,7 +19,9 @@
 
 import { z } from 'zod';
 import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
+import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
 
+// v13 adds a bounded binary read for delivery under the same filesystem authority.
 // v12 bounds Read by tokens rather than bytes: a whole-file read past the
 // limit answers with its first page, and a named range past it is refused.
 // Past the lines shown the file is counted only so far; when the count stops
@@ -58,7 +60,7 @@ import { validateSandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
 // inode that was authorised at lock acquisition instead of only the path
 // string. The identity is carried as strings because bigint cannot cross the
 // JSON protocol boundary.
-export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 12 as const;
+export const FILESYSTEM_WORKER_PROTOCOL_VERSION = 13 as const;
 
 /** Ripgrep output shapes the Grep tool can ask the worker for. */
 export const GREP_OUTPUT_MODES = ['content', 'files_with_matches', 'count'] as const;
@@ -139,6 +141,14 @@ export const FilesystemWorkerTargetSchema = z
   });
 
 export const FilesystemWorkerOperationSchema = z.union([
+  z
+    .object({
+      kind: z.literal('read_bytes'),
+      cwd,
+      path,
+      maxBytes: z.number().int().nonnegative().max(MAX_ATTACHMENT_BYTES),
+    })
+    .strict(),
   z
     .object({
       /**
@@ -250,6 +260,12 @@ export const FilesystemWorkerRequestSchema = z
 export const FILESYSTEM_TARGET_KINDS = ['file', 'directory', 'other'] as const;
 
 export const FilesystemWorkerResultSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('read_bytes'),
+      base64: z.string().max(Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4),
+    })
+    .strict(),
   z.object({ kind: z.literal('metadata'), targetType: z.enum(FILESYSTEM_TARGET_KINDS) }).strict(),
   z
     .object({

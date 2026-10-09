@@ -558,11 +558,10 @@ to split — list in the panel, preview in the pane.
 - The desktop client-settings tools (`MakaClientSettingsGet` /
   `MakaClientSettingsUpdate`) are not in the registry; `tool-format.ts`
   classifies them by capability id, as before.
-- SendUserFile stores a copy of the delivered file as a session artifact,
-  and the artifact reader only accepts sources under the session cwd. A file
-  inside a bypass boundary but outside the cwd passes admission and then
-  fails with "has to live inside the session working directory". Widening
-  the reader (`execution-artifacts.ts` `readBoundedSourceFile`) is the fix.
+- Resolved: SendUserFile reads bounded binary content through the session's
+  filesystem authority, including authorised paths outside the cwd. Delivery
+  publishes the batch atomically and associates records by input order, so
+  denied files and duplicate basenames cannot leave a partial delivery.
 - The FakeBackend emits no delivery results, so the Electron smoke does not
   exercise the new cards; the renderer state tests do. A fixture turn for
   them is the follow-up.

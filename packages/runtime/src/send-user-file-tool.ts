@@ -19,9 +19,11 @@
 
 import { basename, extname, isAbsolute, resolve } from 'node:path';
 import { isRenderableDeliveryPreview } from '@maka/core/artifacts';
-import type { ArtifactKind, ArtifactRecord } from '@maka/core/artifacts';
+import type { ArtifactKind } from '@maka/core/artifacts';
 import type { ToolResultContent } from '@maka/core/events';
+import { ToolOutcomeUnknownError } from '@maka/core/events';
 import { TOOL_NAMES } from '@maka/core/tool-names';
+import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
 import { z } from 'zod';
 
 import type { PermissionProfile } from '@maka/core/permission-profile';
@@ -63,6 +65,7 @@ export const SEND_USER_FILE_DESCRIPTION = [
   "Set `display` to choose how the file is presented. Use `'render'` when the user should see the content inline in the side panel right now — a chart, a rendered HTML page, a diagram, an image. Use `'attach'` when the file is something they'll save and open elsewhere — source code, a spreadsheet, a document for another app — and an inline preview would just be noise. Leave it unset to let the client decide by file type.",
   '',
   "Files must already exist on the local filesystem — the tool sends files, it doesn't fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory.",
+  `Files are read under the current session permissions, including authorised paths outside the working directory. Each file must be at most ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB. A batch is delivered only after every file has been read and stored successfully.`,
   '',
   'Example: SendUserFile({ files: ["report.md"], caption: "Here\'s the report.", status: "normal" })',
 ].join('\n');
@@ -145,7 +148,7 @@ export function buildSendUserFileTool(
           ...(mimeType ? { mimeType } : {}),
           source: 'user_delivery',
           ...(caption ? { summary: caption } : {}),
-          sourcePath: path,
+          readContent: () => readDeliveryBytes(filesystem, requested, ctx),
         });
         paths.push(path);
       }
@@ -156,23 +159,25 @@ export function buildSendUserFileTool(
         args.display ??
         (candidates[0] && isRenderableDeliveryPreview(candidates[0]) ? 'render' : 'attach');
       const records = await recordArtifacts(candidates);
-      const aligned = alignRecordsToCandidates(candidates, records);
-      const undelivered = aligned.flatMap((record, index) =>
-        record ? [] : [args.files[index] ?? paths[index] ?? 'file'],
-      );
-      if (undelivered.length > 0) throw notAttachedError(undelivered);
+      // The recorder's delivery contract is atomic and ordered. Names are
+      // presentation only: two different paths can have the same basename.
+      if (records.length !== candidates.length) {
+        throw new ToolOutcomeUnknownError(
+          'File delivery did not return a complete batch; delivery outcome is unknown.',
+        );
+      }
       return {
         kind: 'user_file_delivery',
         status: args.status,
         ...(caption ? { caption } : {}),
         display,
-        files: aligned.map((record, index) => ({
-          artifactId: record!.id,
-          name: record!.name,
+        files: records.map((record, index) => ({
+          artifactId: record.id,
+          name: record.name,
           path: paths[index]!,
-          kind: record!.kind,
-          ...(record!.mimeType ? { mimeType: record!.mimeType } : {}),
-          sizeBytes: record!.sizeBytes,
+          kind: record.kind,
+          ...(record.mimeType ? { mimeType: record.mimeType } : {}),
+          sizeBytes: record.sizeBytes,
         })),
       };
     },
@@ -209,6 +214,28 @@ function deliveredFiles(output: unknown): SendUserFileResult['files'] | undefine
 
 function resolveDeliveryPath(cwd: string, requested: string): string {
   return isAbsolute(requested) ? resolve(requested) : resolve(cwd, requested);
+}
+
+async function readDeliveryBytes(
+  filesystem: Pick<FilesystemExecutor, 'execute'>,
+  requested: string,
+  ctx: MakaToolContext,
+): Promise<Uint8Array> {
+  try {
+    const result = await filesystem.execute({
+      operation: { kind: 'read_bytes', path: requested, maxBytes: MAX_ATTACHMENT_BYTES },
+      cwd: ctx.cwd,
+      ...(ctx.executionBoundary ? { executionBoundary: ctx.executionBoundary } : {}),
+      ...(ctx.permissionMode ? { permissionMode: ctx.permissionMode } : {}),
+      ...(ctx.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
+    });
+    if (result.kind !== 'read_bytes' || result.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error('File reader returned an invalid or oversized delivery payload.');
+    }
+    return result.bytes;
+  } catch (error) {
+    throw deliveryPathError(requested, ctx.cwd, error);
+  }
 }
 
 /**
@@ -286,39 +313,6 @@ function deliveryPathError(requested: string, cwd: string, error: unknown): Erro
 function failureReason(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
   return message.length > 0 ? message : 'the file could not be opened.';
-}
-
-function notAttachedError(files: readonly string[]): Error {
-  return new Error(
-    `SendUserFile could not attach ${files.join(', ')} to the conversation, so nothing was delivered for ${files.length === 1 ? 'it' : 'them'}. ` +
-      'A delivered file has to live inside the session working directory and be small enough to store. ' +
-      'Copy the file into the working directory, or tell the user where it is on disk instead.',
-  );
-}
-
-/**
- * Match recorded Artifacts back to the candidates that asked for them.
- *
- * The recorder publishes candidates in order and skips the ones it cannot store,
- * so walking both lists together identifies exactly which files were dropped —
- * which a length comparison alone cannot do when two deliveries share a name.
- */
-function alignRecordsToCandidates(
-  candidates: readonly ToolArtifactCandidate[],
-  records: readonly ArtifactRecord[],
-): Array<ArtifactRecord | undefined> {
-  const aligned: Array<ArtifactRecord | undefined> = [];
-  let cursor = 0;
-  for (const candidate of candidates) {
-    const record = records[cursor];
-    if (record && record.name === candidate.name) {
-      aligned.push(record);
-      cursor += 1;
-    } else {
-      aligned.push(undefined);
-    }
-  }
-  return aligned;
 }
 
 /** An image MIME decides `image`; otherwise the extension names the kind. */

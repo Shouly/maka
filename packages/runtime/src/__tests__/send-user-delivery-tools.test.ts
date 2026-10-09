@@ -64,34 +64,34 @@ describe('SendUserFile', () => {
     // Admission ASKS what the path is; it never opens it. A `read` here would
     // pull both files into memory in full and discard them.
     assert.deepEqual(
-      reads.map((read) => read.operation),
+      reads.filter((read) => read.operation.kind === 'metadata').map((read) => read.operation),
       [
         { kind: 'metadata', path: 'out/report.md' },
         { kind: 'metadata', path: '/elsewhere/chart.png' },
       ],
     );
+    assert.ok(reads.every((read) => read.cwd === CWD));
+    assert.equal(reads.filter((read) => read.operation.kind === 'read_bytes').length, 2);
+    assert.ok(recorded[0]?.every((candidate) => typeof candidate.readContent === 'function'));
     assert.deepEqual(
-      reads.map((read) => read.cwd),
-      [CWD, CWD],
+      recorded[0]?.map(({ readContent: _readContent, ...candidate }) => candidate),
+      [
+        {
+          kind: 'file',
+          name: 'report.md',
+          mimeType: 'text/markdown',
+          source: 'user_delivery',
+          summary: 'The report and its chart.',
+        },
+        {
+          kind: 'image',
+          name: 'chart.png',
+          mimeType: 'image/png',
+          source: 'user_delivery',
+          summary: 'The report and its chart.',
+        },
+      ],
     );
-    assert.deepEqual(recorded[0], [
-      {
-        kind: 'file',
-        name: 'report.md',
-        mimeType: 'text/markdown',
-        source: 'user_delivery',
-        summary: 'The report and its chart.',
-        sourcePath: `${CWD}/out/report.md`,
-      },
-      {
-        kind: 'image',
-        name: 'chart.png',
-        mimeType: 'image/png',
-        source: 'user_delivery',
-        summary: 'The report and its chart.',
-        sourcePath: '/elsewhere/chart.png',
-      },
-    ]);
     assert.deepEqual(result, {
       kind: 'user_file_delivery',
       status: 'proactive',
@@ -274,7 +274,38 @@ describe('SendUserFile', () => {
     );
   });
 
-  test('names the files the Artifact store could not keep', async () => {
+  test('preserves a boundary expansion when the actual byte read is refused after metadata', async () => {
+    const expansion = {
+      filesystem: {
+        entries: [{ path: '/outside/a.bin', access: 'read' as const, scope: 'exact' as const }],
+      },
+    };
+    const tool = buildSendUserFileTool({
+      filesystem: {
+        execute: async (input) => {
+          if (input.operation.kind === 'metadata') return { kind: 'metadata', targetType: 'file' };
+          assert.equal(input.operation.kind, 'read_bytes');
+          throw new FilesystemWorkerClientError({
+            reason: 'sandbox_boundary_required',
+            stage: 'validation',
+            recoverable: true,
+            requiredExpansion: expansion,
+          });
+        },
+      },
+    });
+    await assert.rejects(
+      async () => tool.impl({ files: ['/outside/a.bin'], status: 'normal' }, recordingContext([])),
+      (error: unknown) => {
+        const metadata = sandboxErrorMetadata(error);
+        assert.equal(metadata?.reason, 'sandbox_boundary_required');
+        assert.deepEqual(metadata?.requiredExpansion, expansion);
+        return true;
+      },
+    );
+  });
+
+  test('treats an incomplete recorder response as an unknown delivery outcome', async () => {
     const tool = buildSendUserFileTool({ filesystem: fakeFilesystem([]) });
     const context = toolContext({
       recordArtifacts: async (candidates) =>
@@ -285,7 +316,8 @@ describe('SendUserFile', () => {
       async () =>
         await tool.impl({ files: ['small.md', 'huge.bin', 'other.md'], status: 'normal' }, context),
       (error: unknown) => {
-        assert.match(String((error as Error).message), /could not attach huge\.bin/);
+        assert.match(String((error as Error).message), /delivery outcome is unknown/);
+        assert.equal((error as { code: string }).code, 'outcome_unknown');
         return true;
       },
     );
@@ -337,10 +369,8 @@ describe('SendUserFile', () => {
     assert.match(tool.description, /Re-send a file only when it has meaningfully changed/u);
     assert.match(tool.description, /verify with ls first/u);
     assert.match(tool.description, /Leave it unset to let the client decide by file type/u);
-    // The reference does not announce that a batch is all-or-nothing, so
-    // neither does this. The behaviour is unchanged — only the warning is
-    // gone, and a model learns it from the refusal instead.
-    assert.doesNotMatch(tool.description, /WHOLE call/u);
+    assert.match(tool.description, /current session permissions/u);
+    assert.match(tool.description, /every file has been read and stored successfully/u);
     // It must NOT promise that the card carries the caption: the transcript
     // draws no caption, the same as the reference.
     assert.doesNotMatch(tool.description, /carrying the caption/u);
@@ -392,6 +422,8 @@ function fakeFilesystem(
   return {
     execute: async (input) => {
       probes.push(input);
+      if (input.operation.kind === 'read_bytes')
+        return { kind: 'read_bytes', bytes: Buffer.from('test-file') };
       return { kind: 'metadata', targetType } satisfies FilesystemResult;
     },
   };
@@ -401,6 +433,7 @@ function recordingContext(recorded: ToolArtifactCandidate[][]): MakaToolContext 
   return toolContext({
     recordArtifacts: async (candidates) => {
       recorded.push([...candidates]);
+      for (const candidate of candidates) await candidate.readContent?.();
       return candidates.map(artifactFor);
     },
   });

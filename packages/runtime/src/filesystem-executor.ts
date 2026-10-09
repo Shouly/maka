@@ -65,6 +65,7 @@ import type {
   WorkspacePathMetadataExecutor,
   WorkspaceWriteExecutor,
   WorkspaceEnsureDirectoryExecutor,
+  WorkspaceReadBytesExecutor,
 } from './workspace-executor.js';
 
 /** A file operation, named the same way on every backend. `cwd` is supplied per call. */
@@ -74,13 +75,14 @@ export type FilesystemOperation = Exclude<FilesystemBackendOperation, { kind: 'a
 /**
  * The result shape every backend answers with.
  *
- * It is the worker protocol's union with one substitution: image bytes stay
+ * It is the worker protocol's union with one substitution: binary payloads stay
  * bytes. Base64 is how the worker's JSON transport carries them, not part of
  * this contract, so the worker-backed backend decodes once at its own edge and
  * the host-local backend hands its buffer straight through.
  */
 export type FilesystemResult =
-  | Exclude<FilesystemWorkerResult, { kind: 'read_image' }>
+  | Exclude<FilesystemWorkerResult, { kind: 'read_image' | 'read_bytes' }>
+  | { kind: 'read_bytes'; bytes: Uint8Array }
   | { kind: 'read_image'; bytes: Uint8Array; mimeType: ImageMimeType };
 
 export interface FilesystemExecuteInput {
@@ -125,6 +127,7 @@ export type FilesystemWorkspaceExecutor = WorkspaceWriteExecutor &
   WorkspaceEditExecutor &
   Partial<WorkspaceApplyPatchExecutor> &
   Partial<WorkspaceReadModifyWriteExecutor> &
+  Partial<WorkspaceReadBytesExecutor> &
   Partial<WorkspaceEnsureDirectoryExecutor> &
   WorkspaceSearchExecutor;
 
@@ -244,6 +247,15 @@ export function createBoundaryFilesystemExecutor(
           ? (expectedIdentity ?? 'missing')
           : 'unchecked',
     });
+    if (result.kind === 'read_bytes') {
+      if (
+        call.operation.kind !== 'read_bytes' ||
+        Buffer.byteLength(result.base64, 'base64') > call.operation.maxBytes
+      ) {
+        throw new Error('File reader exceeded the requested byte limit.');
+      }
+      return { kind: 'read_bytes', bytes: Buffer.from(result.base64, 'base64') };
+    }
     if (result.kind === 'read_image') {
       return {
         kind: 'read_image',
@@ -378,6 +390,21 @@ function createWorkspaceFilesystemExecutor(
   return {
     async execute({ operation, cwd, abortSignal }, scope, expectedIdentity) {
       switch (operation.kind) {
+        case 'read_bytes': {
+          if (!workspace.readBytes)
+            throw new Error('This workspace does not support binary file delivery.');
+          return {
+            kind: 'read_bytes',
+            bytes: await workspace.readBytes({
+              cwd,
+              path: operation.path,
+              label: 'Read',
+              scope,
+              maxBytes: operation.maxBytes,
+              ...(abortSignal ? { abortSignal } : {}),
+            }),
+          };
+        }
         case 'metadata': {
           let resolved: { path: string };
           try {

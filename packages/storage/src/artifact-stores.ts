@@ -25,6 +25,7 @@ import {
   type ConversationArtifactCopyInput,
   type ConversationArtifactCopyResult,
   type CreateArtifactInput,
+  type CreateArtifactBatchInput,
   type DurableArtifactAttachmentReader,
 } from './artifact-store.js';
 
@@ -58,6 +59,7 @@ export interface InteractiveArtifactStoreWriter extends DurableArtifactAttachmen
   readonly access: 'write';
   readonly [writerBrand]: true;
   create(input: CreateArtifactInput): Promise<ArtifactRecord>;
+  createBatch(inputs: readonly CreateArtifactBatchInput[]): Promise<ArtifactRecord[]>;
   /**
    * Narrow system delete for one Session-owned artifact of a declared source.
    *
@@ -151,6 +153,10 @@ function createWriterFacade(
     create: (input) => {
       const acceptedInput = snapshotCreateInput(input);
       return run(() => store.create(acceptedInput));
+    },
+    createBatch: (inputs) => {
+      const accepted = Object.freeze(inputs.map((input) => Object.freeze({ ...input })));
+      return run(() => store.createBatch(accepted));
     },
     deleteOwnedArtifactInSession: (sessionId, artifactId, source) =>
       run(() => store.deleteOwnedArtifactInSession(sessionId, artifactId, source)),

@@ -41,6 +41,7 @@ import type { ShellPlan } from './shell-detect.js';
 import { isSupportedImagePath, isWorkspaceImage, readWorkspaceImage } from './image-file.js';
 import type { ImageMimeType } from './image-file.js';
 import { readFileLineWindow, readTextLineWindowFacts } from './text-line-window.js';
+import { readBoundedFileBytes } from './file-bounded-bytes.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
@@ -308,6 +309,13 @@ export interface WorkspacePathMetadataExecutor {
   pathMetadata(input: WorkspaceResolvePathInput): Promise<WorkspacePathMetadataResult>;
 }
 
+/** External executors supply their own binary reader; never read their paths on the host. */
+export interface WorkspaceReadBytesExecutor {
+  readBytes(
+    input: WorkspaceResolvePathInput & { maxBytes: number; abortSignal?: AbortSignal },
+  ): Promise<Uint8Array>;
+}
+
 export interface WorkspaceWritablePathResolver {
   resolveWritablePath(input: WorkspaceResolvePathInput): Promise<WorkspaceResolvePathResult>;
 }
@@ -370,10 +378,18 @@ export interface WorkspaceExecutor
     WorkspaceGrepExecutor,
     Partial<WorkspaceApplyPatchExecutor>,
     Partial<WorkspaceReadModifyWriteExecutor>,
+    Partial<WorkspaceReadBytesExecutor>,
     Partial<WorkspaceEnsureDirectoryExecutor> {}
 
 export class LocalWorkspaceExecutor implements WorkspaceExecutor {
   readonly facts = LOCAL_WORKSPACE_EXECUTOR_FACTS;
+
+  async readBytes(
+    input: WorkspaceResolvePathInput & { maxBytes: number; abortSignal?: AbortSignal },
+  ): Promise<Uint8Array> {
+    const resolved = await this.resolveExistingPath(input);
+    return readBoundedFileBytes(resolved.path, input.maxBytes, input.abortSignal);
+  }
 
   async exec(input: WorkspaceExecInput): Promise<WorkspaceExecResult> {
     const options = {

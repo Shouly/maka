@@ -380,6 +380,8 @@ export interface MakaToolContext {
    * the ids the recorder mints. ToolRuntime fills this from its artifact
    * recorder so the tool can record first and answer with the ids; the
    * post-settlement derivation is untouched and still owns Write/Edit/Bash.
+   * SendUserFile supplies lazy authorised byte readers; its recorder must
+   * publish the complete batch atomically and return records in input order.
    */
   recordArtifacts?: (candidates: readonly ToolArtifactCandidate[]) => Promise<ArtifactRecord[]>;
   askUserQuestion?: (questions: UserQuestion[]) => Promise<UserQuestionResult>;

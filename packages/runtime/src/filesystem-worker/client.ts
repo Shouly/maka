@@ -584,6 +584,9 @@ export class FilesystemWorkerClient {
         cwd: transformed.exec.cwd,
         env: transformed.exec.env ?? {},
         stdin: requestJson,
+        ...(operation.kind === 'read_bytes'
+          ? { maxResponseBytes: Math.ceil(operation.maxBytes / 3) * 4 + 16 * 1024 }
+          : {}),
         ...(transformed.exec.fdInputs ? { fdInputs: transformed.exec.fdInputs } : {}),
         timeoutMs: this.timeoutMs,
         ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),

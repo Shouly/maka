@@ -41,6 +41,7 @@ import {
   writeThroughHandle,
 } from '../file-stable-write.js';
 import { isWorkspaceImage, readWorkspaceImage } from '../image-file.js';
+import { BoundedFileReadError, readBoundedFileBytes } from '../file-bounded-bytes.js';
 import {
   applyGrepHeadLimit,
   buildRipgrepArgs,
@@ -138,6 +139,17 @@ export async function executeFilesystemOperation(
   expectedTarget?: FilesystemWorkerTarget,
 ): Promise<FilesystemWorkerResult> {
   switch (operation.kind) {
+    case 'read_bytes': {
+      const path = await resolveExistingAllowed(
+        operation.cwd,
+        operation.path,
+        'Read',
+        'read',
+        operationBoundary,
+      );
+      const bytes = await readBoundedFileBytes(path, operation.maxBytes);
+      return { kind: 'read_bytes', base64: Buffer.from(bytes).toString('base64') };
+    }
     case 'metadata': {
       // Existence is the resolver's answer and carries the resolver's wording;
       // the type is one `stat`, which FOLLOWS symlinks — a link to a file is a
@@ -547,6 +559,8 @@ function operationError(
 
 function normalizeOperationError(error: unknown): FilesystemOperationError {
   if (error instanceof FilesystemOperationError) return error;
+  if (error instanceof BoundedFileReadError)
+    return operationError('filesystem_error', error.message);
   if (error instanceof StableWriteFailure) {
     return operationError(error.code, error.message);
   }

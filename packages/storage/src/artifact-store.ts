@@ -110,6 +110,11 @@ export interface CreateArtifactInput {
   id?: string;
 }
 
+/** Read one payload at a time; callbacks must not re-enter this store. */
+export interface CreateArtifactBatchInput extends Omit<CreateArtifactInput, 'content'> {
+  readContent(): Promise<string | Uint8Array>;
+}
+
 export type ArtifactListRevision = `sha256:${string}`;
 
 export interface ArtifactListPage {
@@ -198,6 +203,7 @@ export interface ArtifactUpgradeCleanupResult {
 
 export interface ArtifactAuthorityStore extends DurableArtifactAttachmentReader {
   create(input: CreateArtifactInput): Promise<ArtifactRecord>;
+  createBatch(inputs: readonly CreateArtifactBatchInput[]): Promise<ArtifactRecord[]>;
   close(): void;
   copyConversationArtifacts(
     input: ConversationArtifactCopyInput,
@@ -283,29 +289,8 @@ class SqliteArtifactStore implements ArtifactAuthorityStore {
       ...input,
       content: typeof input.content === 'string' ? input.content : new Uint8Array(input.content),
     });
-    const id = acceptedInput.id ?? randomUUID();
-    if (!ARTIFACT_KIND_SET.has(acceptedInput.kind)) throw new Error('Invalid Artifact kind');
-    if (!ARTIFACT_SOURCE_SET.has(acceptedInput.source)) {
-      throw new Error('Invalid Artifact source');
-    }
-    if (
-      acceptedInput.deepResearchRole !== undefined &&
-      !isDeepResearchArtifactRole(acceptedInput.deepResearchRole)
-    ) {
-      throw new Error('Invalid Artifact deep-research role');
-    }
-    if (
-      acceptedInput.now !== undefined &&
-      (!Number.isSafeInteger(acceptedInput.now) || acceptedInput.now < 0)
-    ) {
-      throw new Error('Invalid Artifact creation time');
-    }
-    assertCanonicalArtifactEntityId(id, 'id');
-    assertCanonicalArtifactEntityId(acceptedInput.sessionId, 'sessionId');
-    assertArtifactTurnKey(acceptedInput.turnId);
-    const name = sanitizeArtifactName(acceptedInput.name);
-    const relativePath = `${acceptedInput.sessionId}/${id}-${name}`;
-    validateRelativeArtifactPath(relativePath);
+    const draft = prepareArtifactDraft(acceptedInput);
+    const { id, name, relativePath } = draft;
     return this.enqueueMutation(async () => {
       await this.prepareMutationUnlocked();
       const existing = this.records.find((record) => record.id === id);
@@ -316,24 +301,65 @@ class SqliteArtifactStore implements ArtifactAuthorityStore {
           relativePath,
         });
       }
-      return this.publishNewArtifactUnlocked(
-        {
-          id,
-          sessionId: acceptedInput.sessionId,
-          turnId: acceptedInput.turnId,
-          createdAt: acceptedInput.now ?? Date.now(),
-          name,
-          kind: acceptedInput.kind,
-          relativePath,
-          ...(acceptedInput.mimeType ? { mimeType: acceptedInput.mimeType } : {}),
-          source: acceptedInput.source,
-          ...(acceptedInput.summary ? { summary: acceptedInput.summary } : {}),
-          ...(acceptedInput.deepResearchRole
-            ? { deepResearchRole: acceptedInput.deepResearchRole }
-            : {}),
-        },
-        (targetPath) => writeFile(targetPath, acceptedInput.content, { flag: 'wx' }),
+      return this.publishNewArtifactUnlocked(draft, (targetPath) =>
+        writeFile(targetPath, acceptedInput.content, { flag: 'wx' }),
       );
+    });
+  }
+
+  /** Publish new records together, after every payload is durable. No partial batch is visible. */
+  async createBatch(inputs: readonly CreateArtifactBatchInput[]): Promise<ArtifactRecord[]> {
+    const accepted = inputs.map((input) => ({
+      draft: prepareArtifactDraft(input),
+      readContent: input.readContent,
+    }));
+    if (new Set(accepted.map(({ draft }) => draft.id)).size !== accepted.length) {
+      throw new Error('Duplicate Artifact identity in batch');
+    }
+    return this.enqueueMutation(async () => {
+      await this.prepareMutationUnlocked();
+      if (accepted.some(({ draft }) => this.records.some((record) => record.id === draft.id))) {
+        throw new Error('Artifact batch requires new identities');
+      }
+      const createdPaths: string[] = [];
+      const records: ArtifactRecord[] = [];
+      try {
+        for (const { draft, readContent } of accepted) {
+          // Keep only one payload in memory. A later read failure removes the
+          // earlier staged files before any record has been published.
+          const loaded = await readContent();
+          const content = typeof loaded === 'string' ? loaded : new Uint8Array(loaded);
+          const target = join(this.artifactRoot, draft.relativePath);
+          const directory = dirname(target);
+          const createdDirectory = await mkdir(directory, { recursive: true });
+          if (createdDirectory !== undefined)
+            await syncDirectoryChain(directory, this.workspaceRoot);
+          await assertArtifactDirectory(this.artifactRoot, directory);
+          const handle = await open(target, 'wx');
+          createdPaths.push(target);
+          try {
+            await handle.writeFile(content);
+            await handle.sync();
+            records.push({ ...draft, sizeBytes: (await handle.stat()).size });
+          } finally {
+            await handle.close();
+          }
+          await syncDirectory(directory);
+        }
+        await this.writeMetadataUnlocked({ upserts: records });
+        this.records = [...this.records, ...records];
+        return records.map((record) => ({ ...record }));
+      } catch (error) {
+        const cleanup = await Promise.allSettled(
+          createdPaths.map((path) => removeFileDurably(path, dirname(path))),
+        );
+        const failures = cleanup.flatMap((result) =>
+          result.status === 'rejected' ? [result.reason] : [],
+        );
+        if (failures.length > 0)
+          throw new AggregateError([error, ...failures], 'Artifact batch cleanup failed');
+        throw error;
+      }
     });
   }
 
@@ -1017,6 +1043,37 @@ class SqliteArtifactStore implements ArtifactAuthorityStore {
       return operation();
     });
   }
+}
+
+function prepareArtifactDraft(input: Omit<CreateArtifactInput, 'content'>): ArtifactRecordDraft {
+  const id = input.id ?? randomUUID();
+  if (!ARTIFACT_KIND_SET.has(input.kind)) throw new Error('Invalid Artifact kind');
+  if (!ARTIFACT_SOURCE_SET.has(input.source)) throw new Error('Invalid Artifact source');
+  if (input.deepResearchRole !== undefined && !isDeepResearchArtifactRole(input.deepResearchRole)) {
+    throw new Error('Invalid Artifact deep-research role');
+  }
+  if (input.now !== undefined && (!Number.isSafeInteger(input.now) || input.now < 0)) {
+    throw new Error('Invalid Artifact creation time');
+  }
+  assertCanonicalArtifactEntityId(id, 'id');
+  assertCanonicalArtifactEntityId(input.sessionId, 'sessionId');
+  assertArtifactTurnKey(input.turnId);
+  const name = sanitizeArtifactName(input.name);
+  const relativePath = `${input.sessionId}/${id}-${name}`;
+  validateRelativeArtifactPath(relativePath);
+  return {
+    id,
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    createdAt: input.now ?? Date.now(),
+    name,
+    kind: input.kind,
+    relativePath,
+    ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+    source: input.source,
+    ...(input.summary ? { summary: input.summary } : {}),
+    ...(input.deepResearchRole ? { deepResearchRole: input.deepResearchRole } : {}),
+  };
 }
 
 async function openRealTarget(path: string) {

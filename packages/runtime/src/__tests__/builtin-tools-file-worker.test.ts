@@ -93,6 +93,8 @@ describe('builtin file tools use the sandboxed worker', () => {
         execute: async (input) => {
           calls.push(input);
           switch (input.operation.kind) {
+            case 'read_bytes':
+              return { kind: 'read_bytes', base64: '' };
             case 'metadata':
               return { kind: 'metadata', targetType: 'file' };
             case 'read':
