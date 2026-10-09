@@ -41,6 +41,7 @@ import {
   type RuntimeContinuation,
 } from '../runtime-resume.js';
 import { testInvocationRecord } from './invocation-fixture.js';
+import { toolAvailabilityToolNames, type ToolAvailabilityConfig } from '../tool-availability.js';
 
 test('local continuation safety inspector returns current authoritative workspace facts', async () => {
   const inspect = createLocalContinuationSafetyInspector({
@@ -59,6 +60,135 @@ test('local continuation safety inspector returns current authoritative workspac
     backgroundOperationsSettled: true,
     availableToolNames: ['Read', 'Write'],
   });
+});
+
+test('handoff checks generated ToolSearch against its actual availability without exempting missing tools', async () => {
+  const cases: {
+    label: string;
+    names: string[];
+    config: ToolAvailabilityConfig | undefined;
+    calledTool: string;
+    disposition: 'continue' | 'park';
+  }[] = [
+    {
+      label: 'enabled',
+      names: ['SearchSkills'],
+      config: {},
+      calledTool: 'ToolSearch',
+      disposition: 'continue',
+    },
+    {
+      label: 'disabled',
+      names: ['SearchSkills'],
+      config: undefined,
+      calledTool: 'ToolSearch',
+      disposition: 'park',
+    },
+    {
+      label: 'direct tools only',
+      names: ['Read'],
+      config: {},
+      calledTool: 'ToolSearch',
+      disposition: 'park',
+    },
+    {
+      label: 'missing ordinary tool',
+      names: ['SearchSkills'],
+      config: {},
+      calledTool: 'RemovedTool',
+      disposition: 'park',
+    },
+  ];
+  for (const item of cases) {
+    const source = runInvocation('run-1', { outcome: 'open' });
+    const sourcePrefix = immutablePrefix([
+      event({
+        id: 'source-user',
+        role: 'user',
+        author: 'user',
+        content: { kind: 'text', text: 'continue' },
+      }),
+      event({
+        id: 'tool-call',
+        content: { kind: 'function_call', id: 'call-1', name: item.calledTool, args: {} },
+      }),
+      event({
+        id: 'tool-result',
+        role: 'tool',
+        author: 'tool',
+        content: {
+          kind: 'function_response',
+          id: 'call-1',
+          name: item.calledTool,
+          result: { kind: 'json', value: { activated: [] } },
+          modelProjection: { version: 1, kind: 'json', value: { activated: [] } },
+        },
+      }),
+    ]);
+    const planner = new RuntimeContinuationPlanner({
+      readSourceInvocation: async () => source,
+      readImmutableRuntimePrefix: async () => sourcePrefix,
+      newId: () => 'unused',
+    });
+    const previewSeal = event({
+      id: 'preview-seal',
+      role: 'system',
+      author: 'host',
+      modelVisibility: 'hidden',
+      actions: {
+        endInvocation: true,
+        handoffPause: {
+          protocol: 'runtime_handoff_pause_v1',
+          hostEpoch: 'old-host',
+          handoffId: 'handoff-1',
+          rootRunId: source.runId,
+          successorRunId: 'successor-run',
+          successorInvocationId: 'successor-run',
+          claimId: 'claim-1',
+          remainingSteps: 3,
+        },
+      },
+    });
+    const plan = await planner.previewHandoff(
+      {
+        sessionId: source.sessionId,
+        sourceRunId: source.runId,
+        purpose: 'handoff',
+        admissionRoute: {
+          invocations: [source],
+          targetProviderStateIdentity: undefined,
+          targetModelId: 'test-model',
+        },
+        currentCwd: '/workspace/repo',
+        sourceWorkspaceIdentity: 'workspace-1',
+        currentWorkspaceIdentity: 'workspace-1',
+        backgroundOperationsSettled: true,
+        availableToolNames: toolAvailabilityToolNames(
+          item.names.map((name) => ({
+            name,
+            description: name,
+            parameters: {},
+            impl: () => ({}),
+          })),
+          item.config,
+        ),
+      },
+      previewSeal,
+    );
+    assert.equal(plan.disposition, item.disposition, item.label);
+    assert.deepEqual(
+      plan.rejectionReasons,
+      item.disposition === 'park' ? ['tool_catalog_mismatch'] : [],
+      item.label,
+    );
+    if (item.disposition === 'park') {
+      assert.deepEqual(
+        plan.diagnostics[0]?.detail,
+        { unavailableToolNames: [item.calledTool] },
+        item.label,
+      );
+    }
+  }
 });
 
 test('RuntimeContinuationPlanner reads the durable source boundary and allocates fresh identities', async () => {

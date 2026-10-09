@@ -26,6 +26,7 @@ import { type AgentGraphCoordinator } from '@maka/runtime/stream-graph-coordinat
 import {
   type ConversationCopyExternalChildReferences,
   type ConversationCopyLinkedChildReference,
+  type ConversationCopyChildNotification,
 } from '@maka/runtime/conversation-copy';
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
 
@@ -59,12 +60,12 @@ interface MutableExternalChildReferences {
 }
 
 /**
- * Validate historical Agent Graph references retained by a Session revision.
+ * Validate historical child references retained by a conversation copy.
  *
  * A revision remains in the source revision family, so terminal children stay
  * owned by their exact physical parent and are retained by the same lifecycle
- * unit. An ordinary branch has an independent lifecycle and therefore cannot
- * share those child authorities.
+ * unit. Branches and side conversations have independent lifecycles and take
+ * snapshots instead of retaining control of the source's children.
  */
 export async function prepareAgentGraphRevisionReferences(
   input: {
@@ -74,10 +75,12 @@ export async function prepareAgentGraphRevisionReferences(
     readonly sessionHeaders: readonly SessionHeader[];
     readonly copyTurnIds: readonly string[];
     readonly requests: readonly ConversationCopyLinkedChildReference[];
+    readonly childNotifications?: readonly ConversationCopyChildNotification[];
   },
   dependencies: GraphRevisionDependencies,
 ): Promise<AgentGraphRevisionReferencePreparation> {
   const requests = input.requests;
+  const snapshotChildren = input.kind !== 'revision';
   const retainedTurnIds = new Set(input.copyTurnIds);
   const sourceFamilyId = sessionRevisionFamilyId(input.sourceHeader);
   const familySessionIds = new Set(
@@ -91,19 +94,10 @@ export async function prepareAgentGraphRevisionReferences(
       retainedTurnIds.has(header.subagentParent.spawnedBy.parentTurnId),
   );
 
-  if (input.kind === 'branch' && (requests.length > 0 || directChildren.length > 0)) {
-    return failure(
-      'operation_unavailable',
-      'Ordinary branches cannot share linked child Session ownership with their source',
-    );
-  }
-  if (input.kind === 'branch') {
-    return { ok: true, references: new Map() };
-  }
   const requestedChildIds = new Set(requests.map((request) => request.childSessionId));
   const unrepresentedChildren = directChildren.filter((child) => !requestedChildIds.has(child.id));
   if (
-    input.kind === 'side_conversation' &&
+    snapshotChildren &&
     unrepresentedChildren.some((child) => dependencies.isSessionActive(child.id))
   ) {
     return failure('session_busy', 'A retained linked child is still active');
@@ -118,7 +112,7 @@ export async function prepareAgentGraphRevisionReferences(
     referencedGraphs.set(parent.parentSessionId, graphIds);
   };
   for (const request of requests) retainGraph(headersById.get(request.childSessionId));
-  if (input.kind === 'side_conversation') {
+  if (snapshotChildren) {
     for (const child of directChildren) retainGraph(child);
   }
   const retainedSessionGraphFailure = async () => {
@@ -153,22 +147,14 @@ export async function prepareAgentGraphRevisionReferences(
     }
     return undefined;
   };
-  if (input.kind === 'side_conversation') {
+  if (snapshotChildren) {
     const graphFailure = await retainedExactGraphFailure();
     if (graphFailure) return graphFailure;
   }
-  if (
-    directChildren.some(
-      (child) =>
-        (input.kind === 'revision' && !child.subagentParent?.graph) ||
-        !requestedChildIds.has(child.id),
-    )
-  ) {
+  if (unrepresentedChildren.length > 0) {
     return failure(
       'operation_unavailable',
-      input.kind === 'side_conversation'
-        ? 'Side Conversation requires a terminal result for every retained linked child'
-        : 'Session revision requires a terminal result for every retained Agent Graph child',
+      'Conversation copy requires a result for every retained linked child',
     );
   }
   if (input.kind === 'revision') {
@@ -188,7 +174,7 @@ export async function prepareAgentGraphRevisionReferences(
       !child ||
       !parent ||
       !familySessionIds.has(parent.parentSessionId) ||
-      (input.kind === 'revision' && !parent.graph) ||
+      (request.kind === 'agent_swarm' && !parent.graph) ||
       (parent.graph !== undefined &&
         !referencedGraphs.get(parent.parentSessionId)?.has(parent.graph.graphId)) ||
       !retainedTurnIds.has(parent.spawnedBy.parentTurnId)
@@ -201,7 +187,12 @@ export async function prepareAgentGraphRevisionReferences(
     if (dependencies.isSessionActive(childSessionId)) {
       return failure('session_busy', 'A retained Agent Graph child is still active');
     }
-    if (!isTerminalRunStatus(request.status)) {
+    // Agent returns a launch receipt. Its immutable `running` status is not
+    // the child's current state; only an ordinary Agent receipt gets resolved
+    // against the child's exact run below. Graph outcomes remain terminal facts.
+    const launchReceipt =
+      request.kind === 'subagent' && request.status === 'running' && parent.graph === undefined;
+    if (!launchReceipt && !isTerminalRunStatus(request.status)) {
       return failure('session_busy', 'A retained Agent Graph result is not terminal');
     }
 
@@ -230,7 +221,7 @@ export async function prepareAgentGraphRevisionReferences(
       !currentRun ||
       currentRun.sessionId !== childSessionId ||
       currentRun.turnId !== request.turnId ||
-      !linkedResultStatusMatchesRun(request, currentRun)
+      (!launchReceipt && !linkedResultStatusMatchesRun(request, currentRun))
     ) {
       return failure('operation_unavailable', 'Retained Agent Graph run reference is unavailable');
     }
@@ -268,6 +259,44 @@ export async function prepareAgentGraphRevisionReferences(
     if (request.resumedFromRunId) accepted.runIds.add(request.resumedFromRunId);
     for (const artifactId of request.artifactIds) accepted.artifactIds.add(artifactId);
     references.set(childSessionId, accepted);
+  }
+  for (const notification of input.childNotifications ?? []) {
+    const accepted = references.get(notification.childSessionId);
+    // A previously detached copy has no linked-child authority. Its files
+    // are copied from the source Session instead, never fetched from this id.
+    if (!accepted) continue;
+    const parent = headersById.get(notification.childSessionId)!.subagentParent!;
+    if (parent.spawnedBy.toolCallId !== notification.toolCallId) {
+      return failure('operation_unavailable', 'Child notification does not match its launch');
+    }
+    const runs = runsByChildSession.get(notification.childSessionId)!;
+    for (const artifactId of notification.artifactIds) {
+      const artifact = await dependencies.artifacts.getInSession(
+        notification.childSessionId,
+        artifactId,
+      );
+      if (!artifact?.record) continue;
+      const record = artifact.record;
+      const turn = [...runs.values()].find(
+        (run) =>
+          run.turnId === record.turnId &&
+          run.sessionId === notification.childSessionId &&
+          run.terminalEvent &&
+          runtimeInvocationOutcome(run) !== undefined &&
+          run.terminalEvent.ts <= notification.ts,
+      );
+      if (
+        record.sessionId !== notification.childSessionId ||
+        !turn ||
+        record.createdAt > notification.ts
+      ) {
+        return failure(
+          'operation_unavailable',
+          'Child notification Artifact does not belong to its completed history',
+        );
+      }
+      accepted.artifactIds.add(artifactId);
+    }
   }
   return { ok: true, references };
 }

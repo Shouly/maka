@@ -34,6 +34,11 @@ import { toolActivationKey } from './tool-activation-identity.js';
 import type { JSONObject } from './model-protocol.js';
 import type { NativeToolDeferral } from './native-tool-deferral.js';
 import type { MakaTool, ToolGating } from './tool-runtime.js';
+import type { RuntimeEvent } from '@maka/core/runtime-event';
+import {
+  decodeEffectiveToolResultProjection,
+  durableProjectionToToolResultOutput,
+} from './durable-tool-result-projection.js';
 
 /** Canonical name of Maka's provider-independent deferred-tool search connector. */
 export const TOOL_SEARCH_NAME = TOOL_NAMES.toolSearch;
@@ -160,6 +165,35 @@ export interface ToolSearchResult {
   };
 }
 
+/** Bound callable names, including the search connector only when Runtime provides it. */
+export function toolAvailabilityToolNames(
+  tools: readonly MakaTool[],
+  config: ToolAvailabilityConfig | undefined,
+): string[] {
+  const { known, searchable } = toolAvailabilityInventory(tools, config);
+  if (searchable.size > 0) known.add(TOOL_SEARCH_NAME);
+  return [...known].sort(compareExactString);
+}
+
+function toolAvailabilityInventory(
+  tools: readonly MakaTool[],
+  config: ToolAvailabilityConfig | undefined,
+): { known: Set<string>; searchable: Set<string> } {
+  const known = new Set(tools.map((tool) => tool.name));
+  for (const reserved of [TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME]) {
+    if (known.has(reserved)) {
+      throw new Error(`Tool name "${reserved}" is reserved by Runtime`);
+    }
+  }
+  return {
+    known,
+    searchable:
+      config === undefined
+        ? new Set<string>()
+        : new Set([...known].filter((name) => !DIRECT_TOOL_NAMES.has(name))),
+  };
+}
+
 export function toolAvailabilityHash(
   config: ToolAvailabilityConfig | undefined,
 ): `sha256:${string}` {
@@ -237,22 +271,12 @@ export class ToolAvailabilityRuntime {
     config: ToolAvailabilityConfig | undefined,
     private readonly invalidTool: MakaTool,
   ) {
-    if (tools.some((tool) => tool.name === TOOL_SEARCH_NAME)) {
-      throw new Error(`Tool name "${TOOL_SEARCH_NAME}" is reserved by Runtime`);
-    }
-    if (tools.some((tool) => tool.name === TOOL_SEARCH_PROVIDER_NAME)) {
-      throw new Error(`Tool name "${TOOL_SEARCH_PROVIDER_NAME}" is reserved by Runtime`);
-    }
+    const { known, searchable } = toolAvailabilityInventory(tools, config);
     this.nativeDeferral = config?.nativeDeferral;
     this.tools = [...tools];
     this.toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
     this.activationKeysByName = new Map(tools.map((tool) => [tool.name, toolActivationKey(tool)]));
 
-    const known = new Set(this.toolsByName.keys());
-    const searchable =
-      config === undefined
-        ? new Set<string>()
-        : new Set([...known].filter((name) => !DIRECT_TOOL_NAMES.has(name)));
     const claimed = new Set<string>();
     const groups: SearchGroup[] = [];
     for (const group of config?.groups ?? []) {
@@ -451,13 +475,18 @@ export class ToolAvailabilityRuntime {
   /**
    * Re-admit the tools an earlier turn already pointed the provider at.
    *
-   * Only in the native mode, and only for names this Runtime still binds: the
+   * Across Turns only in native mode; within a continued Turn on every wire.
+   * Only for names this Runtime still binds: the
    * transcript says what was pointed at, this says whether that still means
    * anything. The withholding mode deliberately forgets at a turn boundary —
    * nothing there outlives the request that carried it.
    */
-  seedActivation(activeTools: Map<string, string>, names: readonly string[]): void {
-    if (this.nativeDeferral === undefined) return;
+  seedActivation(
+    activeTools: Map<string, string>,
+    names: readonly string[],
+    scope: 'conversation' | 'same_turn_continuation' = 'conversation',
+  ): void {
+    if (this.nativeDeferral === undefined && scope !== 'same_turn_continuation') return;
     for (const name of names) {
       if (!this.searchableNames.has(name)) continue;
       const key = this.activationKeysByName.get(name);
@@ -610,24 +639,10 @@ export class ToolAvailabilityRuntime {
           return { type: 'json', value: { tools: this.openAiToolDefinitions(result.activated) } };
         }
         if (this.nativeDeferral === 'anthropic') {
-          const references = result.activated.map((toolName) => ({
-            type: 'custom' as const,
-            providerOptions: { anthropic: { type: 'tool-reference', toolName } },
-          }));
-          // References alone whenever there are any. Anthropic documents this
-          // result as a list of references and nothing else, and a block beside
-          // them is a shape nothing here has ever put on a real request — not
-          // worth risking on the rare path where a budget refusal happens. A
-          // refusal is already in the run trace, and the other native dialect
-          // has nowhere to report one either: the reader sees fewer tools,
-          // which is what a refusal means.
-          return references.length > 0
-            ? { type: 'content', value: references }
-            : // Nothing matched. A result still has to say something.
-              {
-                type: 'content',
-                value: [{ type: 'text', text: JSON.stringify({ activated: [] }) }],
-              };
+          // The durable codec intentionally omits opaque provider options.
+          // Persist the activation fact; AiSdkMessageProjection expands it to
+          // native references on both the next step and a cold replay.
+          return { type: 'json', value: { activated: [...result.activated] } };
         }
         return {
           type: 'json',
@@ -773,6 +788,40 @@ export function recoverActivatedToolNames(messages: readonly unknown[]): string[
     }
   }
   return [...names];
+}
+
+/** Only paired, successful searches in this logical Turn may survive its handoff. */
+export function recoverTurnToolSearchNames(
+  events: readonly RuntimeEvent[],
+  turnId: string,
+): string[] {
+  const calls = new Set<string>();
+  const messages: unknown[] = [];
+  for (const event of events) {
+    if (event.turnId !== turnId || event.partial || event.modelVisibility === 'hidden') continue;
+    const content = event.content;
+    if (content?.kind !== 'function_call' && content?.kind !== 'function_response') continue;
+    if (content.name !== TOOL_SEARCH_NAME) continue;
+    const identity = `${event.invocationId}\0${content.id}`;
+    if (content.kind === 'function_call') {
+      if (event.role === 'model') calls.add(identity);
+      continue;
+    }
+    if (!calls.delete(identity) || event.role !== 'tool' || content.isError) continue;
+    const effective = decodeEffectiveToolResultProjection(content, event.sessionId);
+    if (effective.kind !== 'projection') continue;
+    messages.push({
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolName: TOOL_SEARCH_NAME,
+          output: durableProjectionToToolResultOutput(effective.projection),
+        },
+      ],
+    });
+  }
+  return recoverActivatedToolNames(messages);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

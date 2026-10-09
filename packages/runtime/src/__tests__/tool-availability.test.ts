@@ -24,15 +24,24 @@ import { z } from 'zod';
 import {
   TOOL_SEARCH_MAX_SCHEMA_CHARS,
   TOOL_SEARCH_NAME,
+  TOOL_SEARCH_PROVIDER_NAME,
   ToolAvailabilityRuntime,
   recoverActivatedToolNames,
+  recoverTurnToolSearchNames,
   toolAvailabilityHash,
+  toolAvailabilityToolNames,
+  type ToolAvailabilityConfig,
   type ToolSearchResult,
 } from '../tool-availability.js';
 import { replayToolSearchOutput } from '../ai-sdk-message-projection.js';
+import {
+  encodeDurableToolResultOutput,
+  durableProjectionToToolResultOutput,
+} from '../durable-tool-result-projection.js';
 import type { ToolResultOutput } from '../model-protocol.js';
 import { bindToolActivationIdentity, toolActivationKey } from '../tool-activation-identity.js';
 import type { MakaTool, MakaToolContext } from '../tool-runtime.js';
+import type { RuntimeEvent } from '@maka/core/runtime-event';
 
 function tool(name: string, description = name): MakaTool {
   return { name, description, parameters: z.object({}), impl: () => ({ ok: true }) };
@@ -76,6 +85,38 @@ test('tool availability hash canonicalizes group members', () => {
 
 test('tool availability hash distinguishes full and search-enabled bindings', () => {
   assert.notEqual(toolAvailabilityHash(undefined), toolAvailabilityHash({}));
+});
+
+test('callable inventory matches Runtime connector availability across deferral modes', () => {
+  const cases: { names: string[]; config: ToolAvailabilityConfig | undefined }[] = [
+    { names: [], config: {} },
+    { names: ['Read', 'Write'], config: {} },
+    { names: ['Read', 'SearchSkills'], config: undefined },
+    { names: ['Read', 'SearchSkills'], config: {} },
+    { names: ['SearchSkills'], config: { nativeDeferral: 'anthropic' } },
+    { names: ['SearchSkills'], config: { nativeDeferral: 'openai-responses' } },
+  ];
+  for (const { names, config } of cases) {
+    const tools = names.map((name) => tool(name));
+    const plan = new ToolAvailabilityRuntime(tools, config, invalid).prepare(new Map());
+    assert.deepEqual(
+      toolAvailabilityToolNames(tools, config),
+      plan.providerTools.filter((tool) => tool.name !== invalid.name).map((tool) => tool.name),
+      JSON.stringify({ names, config }),
+    );
+  }
+});
+
+test('callable inventory preserves the Runtime reserved-name boundary', () => {
+  for (const name of [TOOL_SEARCH_NAME, TOOL_SEARCH_PROVIDER_NAME]) {
+    for (const config of [undefined, {}]) {
+      assert.throws(() => toolAvailabilityToolNames([tool(name)], config), /reserved by Runtime/);
+      assert.throws(
+        () => new ToolAvailabilityRuntime([tool(name)], config, invalid),
+        /reserved by Runtime/,
+      );
+    }
+  }
 });
 
 function runtime() {
@@ -590,7 +631,15 @@ describe('ToolAvailabilityRuntime — native deferral', () => {
       { query: 'select:BrowserClick' },
       ctx,
     )) as ToolSearchResult;
-    const model = connector.toModelOutput?.({ output } as never) as {
+    const durable = encodeDurableToolResultOutput(
+      connector.toModelOutput!({ output } as never)!,
+      'session-1',
+    );
+    assert.deepEqual(durable, { version: 1, kind: 'json', value: { activated: ['BrowserClick'] } });
+    const model = replayToolSearchOutput(
+      durableProjectionToToolResultOutput(durable),
+      (names) => names,
+    ) as {
       type: string;
       value: readonly Record<string, unknown>[];
     };
@@ -623,7 +672,10 @@ describe('ToolAvailabilityRuntime — native deferral', () => {
       activated: ['BrowserClick'],
       blocked: { name: 'docs_edit', reason: 'schema_too_large', schemaChars: 1 },
     };
-    const model = connector.toModelOutput?.({ output } as never) as {
+    const model = replayToolSearchOutput(
+      connector.toModelOutput!({ output } as never)!,
+      (names) => names,
+    ) as {
       value: readonly Record<string, unknown>[];
     };
     assert.equal(model.value.length, 1);
@@ -634,11 +686,11 @@ describe('ToolAvailabilityRuntime — native deferral', () => {
     const runtime = nativeRuntime();
     const connector = searchTool(runtime.prepare(new Map()));
     const output = (await connector.impl({ query: 'select:NotBound' }, ctx)) as ToolSearchResult;
-    const model = connector.toModelOutput?.({ output } as never) as {
-      value: readonly Record<string, unknown>[];
-    };
-    assert.equal(model.value.length, 1);
-    assert.equal(model.value[0]?.type, 'text');
+    const model = replayToolSearchOutput(
+      connector.toModelOutput!({ output } as never)!,
+      (names) => names,
+    );
+    assert.deepEqual(model, { type: 'json', value: { activated: [] } });
   });
 
   test('OpenAI is handed whole declarations, and declares the connector as its own', async () => {
@@ -906,6 +958,49 @@ describe('the API contracts the two wires impose', () => {
 });
 
 describe('seedActivation', () => {
+  test('continuation activation excludes earlier Turns, failed searches and unpaired responses', () => {
+    const pair = (name: string, turnId: string, error = false): RuntimeEvent[] => {
+      const base = {
+        sessionId: 's',
+        invocationId: turnId,
+        runId: turnId,
+        turnId,
+        ts: 1,
+        partial: false,
+      };
+      return [
+        {
+          ...base,
+          id: `${name}-call`,
+          role: 'model',
+          author: 'agent',
+          content: { kind: 'function_call', id: name, name: 'ToolSearch', args: {} },
+        },
+        {
+          ...base,
+          id: `${name}-result`,
+          role: 'tool',
+          author: 'tool',
+          content: {
+            kind: 'function_response',
+            id: name,
+            name: 'ToolSearch',
+            isError: error,
+            result: {},
+            modelProjection: { version: 1, kind: 'json', value: { activated: [name] } },
+          },
+        },
+      ];
+    };
+    const events = [
+      ...pair('Earlier', 'old-turn'),
+      ...pair('Current', 'this-turn'),
+      ...pair('Failed', 'this-turn', true),
+      pair('Orphan', 'this-turn')[1]!,
+    ];
+    assert.deepEqual(recoverTurnToolSearchNames(events, 'this-turn'), ['Current']);
+  });
+
   test('re-admits what the transcript already pointed at, and nothing else', () => {
     const active = new Map<string, string>();
     nativeRuntime().seedActivation(active, ['BrowserClick', 'Read', 'NotBound']);
@@ -918,6 +1013,16 @@ describe('seedActivation', () => {
     const active = new Map<string, string>();
     runtime().seedActivation(active, ['BrowserClick']);
     assert.equal(active.size, 0);
+  });
+
+  test('a same-turn continuation restores only tools still bound and gated', () => {
+    const active = new Map<string, string>();
+    runtime().seedActivation(
+      active,
+      ['BrowserClick', 'Read', 'NotBound'],
+      'same_turn_continuation',
+    );
+    assert.deepEqual([...active.keys()], ['BrowserClick']);
   });
 });
 

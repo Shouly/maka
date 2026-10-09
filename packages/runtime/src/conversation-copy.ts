@@ -68,6 +68,14 @@ import { dirname } from 'node:path';
 import { rewriteDurableToolResultProjectionArtifactRefs } from './durable-tool-result-projection.js';
 import { taskOutputSessionFolder } from './shell-run-output-file.js';
 import {
+  collectConversationCopyChildNotifications,
+  rewriteConversationCopyNotificationArtifacts,
+} from './conversation-copy-notifications.js';
+export {
+  collectConversationCopyChildNotifications,
+  type ConversationCopyChildNotification,
+} from './conversation-copy-notifications.js';
+import {
   linkSavedOutputFile,
   savedOutputFileIn,
   toolResultSessionFolder,
@@ -90,6 +98,7 @@ export interface ConversationCopyExternalChildReferences {
 }
 
 export interface ConversationCopyLinkedChildReference {
+  readonly kind: 'subagent' | 'agent_swarm';
   readonly childSessionId: string;
   readonly runId?: string;
   readonly resumedFromRunId?: string;
@@ -362,13 +371,28 @@ export function rewriteConversationCopyMessage(
       ),
     };
   }
-  if (message.type === 'user' && message.attachments) {
+  if (
+    message.type === 'user' &&
+    (message.attachments || message.origin?.kind === 'background_task')
+  ) {
     return {
       ...message,
-      attachments: message.attachments.map((attachment) => ({
-        ...attachment,
-        ref: rewriteStorageRef(attachment.ref, references),
-      })),
+      ...(references.mode === 'exact' && message.origin?.kind === 'background_task'
+        ? {
+            text: rewriteConversationCopyNotificationArtifacts(
+              rewriteAttachmentResourceRefs(message.text, references.artifactIds),
+              references.artifactIds,
+            ),
+          }
+        : {}),
+      ...(message.attachments
+        ? {
+            attachments: message.attachments.map((attachment) => ({
+              ...attachment,
+              ref: rewriteStorageRef(attachment.ref, references),
+            })),
+          }
+        : {}),
     };
   }
   if (message.type === 'tool_result') {
@@ -712,6 +736,7 @@ export function conversationCopyLinkedChildReferences(
     if (!content.childSessionId) return [];
     return [
       {
+        kind: 'subagent',
         childSessionId: content.childSessionId,
         ...(content.runId ? { runId: content.runId } : {}),
         turnId: content.turnId,
@@ -726,6 +751,7 @@ export function conversationCopyLinkedChildReferences(
     item.childSessionId
       ? [
           {
+            kind: 'agent_swarm' as const,
             childSessionId: item.childSessionId,
             ...(item.runId ? { runId: item.runId } : {}),
             ...(item.resumedFromRunId ? { resumedFromRunId: item.resumedFromRunId } : {}),
@@ -828,6 +854,16 @@ function cloneAgentRunEvent(
       clonedRuntimeEvents,
     );
     if (!selected) return null;
+    // A summary may spell an old notification Artifact id in arbitrary prose.
+    // Keep its canonical events and let the target compact again instead of
+    // re-authenticating that stale summary against rewritten notifications.
+    if (
+      references.mode === 'exact' &&
+      collectConversationCopyChildNotifications(selected.coveredRuntimeEvents).some(
+        (notification) => notification.artifactIds.some((id) => references.artifactIds.has(id)),
+      )
+    )
+      return null;
     const sourceCheckpoint = selected.checkpoint;
     const coveredRuntimeEvents = selected.coveredRuntimeEvents.map(
       (sourceEvent) => clonedRuntimeEvents.get(sourceEvent.id)!,
@@ -1164,7 +1200,12 @@ function rewriteRuntimeEventReferences(
           ...(references.mode === 'exact'
             ? {
                 text: savedOutputs(
-                  rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
+                  event.content.origin?.kind === 'background_task'
+                    ? rewriteConversationCopyNotificationArtifacts(
+                        rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
+                        references.artifactIds,
+                      )
+                    : rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
                 ),
               }
             : {}),

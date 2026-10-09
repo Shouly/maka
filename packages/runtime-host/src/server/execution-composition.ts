@@ -55,6 +55,7 @@ import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
 import { buildHistoryTools } from '@maka/runtime/history-tools';
 import { buildBuiltinTools } from '@maka/runtime/builtin-tools';
 import { createLocalContinuationSafetyInspector } from '@maka/runtime/continuation-safety';
+import { toolAvailabilityToolNames } from '@maka/runtime/tool-availability';
 import { createConfiguredSubagentCatalog } from '@maka/runtime/configured-subagent-catalog';
 import { buildHostCapabilitiesFromBinding } from '@maka/runtime/skills';
 import {
@@ -1094,7 +1095,7 @@ export async function createExecutionRuntimeHostComposition(
         // Which tools a session holds does not depend on its connection.
         const runtimePolicy = await runtimePolicyStores.runtimePolicy.getSnapshot();
         const runProfile = hostedExecutionRunProfile(header.toolProfile);
-        return createInteractiveRunComposer({
+        const composer = createInteractiveRunComposer({
           runtimePolicy,
           shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
           skills,
@@ -1122,7 +1123,8 @@ export async function createExecutionRuntimeHostComposition(
                 },
               }
             : {}),
-        }).tools.map((tool) => tool.name);
+        });
+        return toolAvailabilityToolNames(composer.tools, composer.toolAvailability);
       } finally {
         capabilitySnapshot?.release();
       }
@@ -1140,7 +1142,7 @@ export async function createExecutionRuntimeHostComposition(
           requireClientCapabilities(clientCapabilities).snapshotForSession(previewSessionId);
         try {
           const runtimePolicy = await runtimePolicyStores.runtimePolicy.getSnapshot();
-          return createInteractiveRunComposer({
+          const composer = createInteractiveRunComposer({
             runtimePolicy,
             shell: resolveTurnShellPlan(runtimePolicy.policy.shell),
             skills,
@@ -1158,7 +1160,8 @@ export async function createExecutionRuntimeHostComposition(
               mode: collaborationMode,
               permissionMode,
             },
-          }).tools.map((tool) => tool.name);
+          });
+          return toolAvailabilityToolNames(composer.tools, composer.toolAvailability);
         } finally {
           capabilitySnapshot?.release();
         }

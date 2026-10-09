@@ -208,21 +208,16 @@ async function verifyConcurrentRevisionAuthority(
       { kind: 'session', session: null },
     );
     const linkedChildSource = await querySession(desktop, linkedChildSourceSessionId);
-    await assert.rejects(
-      desktop.request('session.branch.create', {
-        sourceSessionId: linkedChildSourceSessionId,
-        targetSessionId: 'linked-child-copy-target',
-        sourceTurnId: 'linked-turn',
-        expectedSourceRevision: linkedChildSource.revision,
-      }),
-      operationError('operation_unavailable'),
-    );
-    assert.deepEqual(
-      await tui.request('session.catalog.query', {
-        kind: 'get',
-        sessionId: 'linked-child-copy-target',
-      }),
-      { kind: 'session', session: null },
+    const linkedBranch = await desktop.request('session.branch.create', {
+      sourceSessionId: linkedChildSourceSessionId,
+      targetSessionId: 'linked-child-copy-target',
+      sourceTurnId: 'linked-turn',
+      expectedSourceRevision: linkedChildSource.revision,
+    });
+    assert.equal(linkedBranch.kind, 'committed');
+    assert.equal(
+      (await querySession(tui, 'linked-child-copy-target')).id,
+      'linked-child-copy-target',
     );
     const sideConversation = await desktop.request('session.branch.create', {
       sourceSessionId: linkedChildSourceSessionId,

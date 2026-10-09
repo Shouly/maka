@@ -259,9 +259,10 @@ export function decodeEffectiveToolResultProjection(
   }
   if (content.modelProjection !== undefined) {
     try {
+      const projection = decodeDurableToolResultProjection(content.modelProjection);
       return {
         kind: 'projection',
-        projection: decodeDurableToolResultProjection(content.modelProjection),
+        projection: recoverLegacyToolSearchProjection(content, projection, sessionId) ?? projection,
         legacyOutput: content.result,
       };
     } catch {
@@ -309,6 +310,34 @@ export function decodeEffectiveToolResultProjection(
     projection,
     legacyOutput: output,
   };
+}
+
+/** Released Anthropic search references were replaced by this exact empty sentinel. */
+function recoverLegacyToolSearchProjection(
+  content: RuntimeEventFunctionResponseContent,
+  projection: DurableToolResultProjection,
+  sessionId: string,
+): DurableToolResultProjection | undefined {
+  if (
+    content.name !== TOOL_NAMES.toolSearch ||
+    content.isError ||
+    projection?.kind !== 'content' ||
+    projection.parts.length !== 1 ||
+    projection.parts[0]?.kind !== 'text' ||
+    projection.parts[0].text !== 'Tool completed with no content.'
+  )
+    return undefined;
+  const result = content.result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return undefined;
+  const raw = result as { kind?: unknown; value?: unknown };
+  const value = raw.kind === 'json' ? raw.value : result;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const activated = (value as { activated?: unknown }).activated;
+  if (!Array.isArray(activated) || !activated.every((name) => typeof name === 'string'))
+    return undefined;
+  // Keep the ordinary durable size/depth checks. No other projection (notably
+  // failures or truncation) may expose its discarded raw output again.
+  return encodeDurableToolResultOutput({ type: 'json', value: { activated } }, sessionId);
 }
 
 function compatibilityErrorOutput(output: unknown): ToolResultOutput {

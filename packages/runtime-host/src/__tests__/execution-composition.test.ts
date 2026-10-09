@@ -30,6 +30,7 @@ import type { SessionEvent } from '@maka/core/events';
 import { runtimeHandoffPause } from '@maka/core/runtime-handoff';
 import { deferred } from '@maka/core/test-only/async-primitives';
 import { runtimeInvocationFailureClass } from '@maka/runtime/runtime-event-read-model';
+import { ToolAvailabilityRuntime } from '@maka/runtime/tool-availability';
 import { parseNoRealConnectionError } from '@maka/core/connection-error-copy';
 import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
@@ -218,135 +219,208 @@ test('idle schedules and armed or paused Goals allow production handoff and reco
   });
 });
 
-test('production composition resumes a sealed logical Root after all stores and runtime owners reopen', {
-  timeout: 20_000,
-}, async () => {
-  await withCompositionRoot(async ({ root, owner }) => {
-    const entered = deferred<void>();
-    const boundary = deferred<void>();
-    const requested = deferred<void>();
-    let dispatches = 0;
-    const backendFactory: BackendFactory = (context) =>
-      new (class extends FakeBackend {
-        async prepareRunComposition(input: { runId: string; turnId: string }): Promise<void> {
-          await context.recordRunComposition!(input.runId, HANDOFF_TEST_COMPOSITION);
-        }
-
-        override async *send(input: BackendSendInput): AsyncIterable<SessionEvent> {
-          assert.ok(input.runId);
-          await this.prepareRunComposition({ runId: input.runId, turnId: input.turnId });
-          dispatches += 1;
-          if (!input.continuation) {
-            assert.equal(input.maxSteps, 4);
-            entered.resolve();
-            await boundary.promise;
-            assert.equal(await input.handoffBoundary!(new AbortController().signal, 3), 'pause');
-            return;
+for (const searchQuery of [undefined, 'select:NoSuchTool', 'select:SearchSkills']) {
+  test(`production composition resumes a sealed logical Root after all stores and runtime owners reopen (${searchQuery ?? 'without ToolSearch'})`, {
+    timeout: 20_000,
+  }, async () => {
+    await withCompositionRoot(async ({ root, owner }) => {
+      const entered = deferred<void>();
+      const boundary = deferred<void>();
+      const requested = deferred<void>();
+      let dispatches = 0;
+      const backendFactory: BackendFactory = (context) =>
+        new (class extends FakeBackend {
+          async prepareRunComposition(input: { runId: string; turnId: string }): Promise<void> {
+            await context.recordRunComposition!(input.runId, HANDOFF_TEST_COMPOSITION);
           }
-          assert.equal(input.maxSteps, 3);
-          yield {
-            type: 'complete',
-            id: 'completed-after-reopen',
-            turnId: input.turnId,
-            ts: Date.now(),
-            stopReason: 'end_turn',
-          };
-        }
-      })(context);
-    const residencies = new HostResidencyRegistry();
-    const first = await createCapturedExecutionComposition(owner, {
-      primaryBackendFactory: backendFactory,
-      residencies,
-    });
-    let successorOwner: InteractiveRootOwner | undefined;
-    let successor: Awaited<ReturnType<typeof createCapturedExecutionComposition>> | undefined;
-    try {
-      const request = first.manager.requestRunHandoff.bind(first.manager);
-      first.manager.requestRunHandoff = (...args) => {
-        const result = request(...args);
-        requested.resolve();
-        return result;
-      };
-      const session = await first.manager.createSession({
-        cwd: root,
-        llmConnectionId: FAKE_CONNECTION_ID,
-        llmConnectionSlug: 'fake',
-        model: 'fake-model',
-        permissionMode: 'ask',
-      });
-      const started = await first.composition.handlers['turn.start'](
-        {
-          sessionId: session.id,
-          turnId: 'reopen-handoff-turn',
-          content: { text: 'continue after restart' },
-          maxSteps: 4,
-        },
-        {
-          hostEpoch: 'execution-composition-test',
-          connectionId: 'client',
-          principal: 'local_os_user',
-          acquireResidency: () => residencies.acquire('test-operation'),
-        },
-      );
-      assert.equal(started.ok, true, JSON.stringify(started));
-      await entered.promise;
-      assert.ok(first.composition.prepareHandoff);
-      const preparing = first.composition.prepareHandoff(
-        'execution-composition-test',
-        new AbortController().signal,
-      );
-      await requested.promise;
-      boundary.resolve();
-      const preparation = await preparing;
-      assert.ok(preparation);
-      assert.equal(await preparation.seal(), true);
-      const transferred = await preparation.residencies();
-      assert.ok(transferred);
-      assert.equal(
-        residencies.hasDrainResidenciesExcept(transferred),
-        false,
-        JSON.stringify(residencies.snapshot()),
-      );
-      await preparation.detach();
-      first.composition.beginDrain();
-      await first.composition.close();
-      assert.equal(dispatches, 1);
-      await owner.close();
 
-      successorOwner = await tryAcquireInteractiveRootOwner(
-        await resolveStorageRoot({ path: root, kind: 'interactive' }),
-      );
-      assert.ok(successorOwner);
-      successor = await createCapturedExecutionComposition(successorOwner, {
+          override async *send(input: BackendSendInput): AsyncIterable<SessionEvent> {
+            assert.ok(input.runId);
+            await this.prepareRunComposition({ runId: input.runId, turnId: input.turnId });
+            dispatches += 1;
+            if (!input.continuation) {
+              assert.equal(input.maxSteps, 4);
+              if (searchQuery !== undefined) {
+                // Exercise Runtime's real connector; only the model transport is fake.
+                // SearchSkills is also bound by the production Host composer.
+                const search = new ToolAvailabilityRuntime(
+                  [
+                    {
+                      name: 'SearchSkills',
+                      description: 'Search skills',
+                      parameters: {},
+                      impl: () => ({}),
+                    },
+                  ],
+                  {},
+                  { name: 'invalid', description: 'invalid', parameters: {}, impl: () => ({}) },
+                )
+                  .prepare(new Map())
+                  .providerTools.find((tool) => tool.name === 'ToolSearch');
+                assert.ok(search);
+                const args = { query: searchQuery };
+                const result = await search.impl(args, {
+                  sessionId: context.sessionId,
+                  turnId: input.turnId,
+                  cwd: root,
+                  toolCallId: 'search-before-handoff',
+                  abortSignal: new AbortController().signal,
+                  emitOutput() {},
+                });
+                assert.deepEqual(result, {
+                  activated: searchQuery === 'select:SearchSkills' ? ['SearchSkills'] : [],
+                });
+                yield {
+                  type: 'tool_start',
+                  id: 'search-start',
+                  turnId: input.turnId,
+                  ts: Date.now(),
+                  toolUseId: 'search-before-handoff',
+                  toolName: search.name,
+                  args,
+                };
+                yield {
+                  type: 'tool_result',
+                  id: 'search-result',
+                  turnId: input.turnId,
+                  ts: Date.now(),
+                  toolUseId: 'search-before-handoff',
+                  isError: false,
+                  content: { kind: 'json', value: result },
+                };
+              }
+              entered.resolve();
+              await boundary.promise;
+              assert.equal(await input.handoffBoundary!(new AbortController().signal, 3), 'pause');
+              return;
+            }
+            assert.equal(input.maxSteps, 3);
+            if (searchQuery !== undefined) {
+              assert.ok(
+                input.runtimeContext?.some(
+                  (event) =>
+                    event.content?.kind === 'function_call' && event.content.name === 'ToolSearch',
+                ),
+              );
+              const response = input.runtimeContext?.find(
+                (event) =>
+                  event.content?.kind === 'function_response' &&
+                  event.content.name === 'ToolSearch',
+              );
+              assert.equal(response?.content?.kind, 'function_response');
+              if (response?.content?.kind === 'function_response') {
+                assert.deepEqual(response.content.result, {
+                  kind: 'json',
+                  value: {
+                    activated: searchQuery === 'select:SearchSkills' ? ['SearchSkills'] : [],
+                  },
+                });
+              }
+            }
+            yield {
+              type: 'complete',
+              id: 'completed-after-reopen',
+              turnId: input.turnId,
+              ts: Date.now(),
+              stopReason: 'end_turn',
+            };
+          }
+        })(context);
+      const residencies = new HostResidencyRegistry();
+      const first = await createCapturedExecutionComposition(owner, {
         primaryBackendFactory: backendFactory,
+        residencies,
       });
-      const stores = await openInteractiveExecutionStoresForWrite(successorOwner.lease);
-      await waitFor(
-        async () =>
-          (await stores.runtimeEventStore.listSessionInvocations(session.id)).some(
-            (run) => runtimeInvocationOutcome(run) === 'completed',
-          ),
-        5_000,
-      );
-      const runs = await stores.runtimeEventStore.listSessionInvocations(session.id);
-      assert.equal(runs.length, 2);
-      assert.equal(new Set(runs.map((run) => run.turnId)).size, 1);
-      assert.equal(
-        runs.filter((run) => run.terminalEvent && runtimeHandoffPause(run.terminalEvent)).length,
-        1,
-      );
-      assert.equal(runs.filter((run) => runtimeInvocationOutcome(run) === 'completed').length, 1);
-      assert.equal(dispatches, 2);
-    } finally {
-      boundary.resolve();
-      first.composition.beginDrain();
-      await first.composition.close();
-      successor?.composition.beginDrain();
-      await successor?.composition.close();
-      await successorOwner?.close();
-    }
+      let successorOwner: InteractiveRootOwner | undefined;
+      let successor: Awaited<ReturnType<typeof createCapturedExecutionComposition>> | undefined;
+      try {
+        const request = first.manager.requestRunHandoff.bind(first.manager);
+        first.manager.requestRunHandoff = (...args) => {
+          const result = request(...args);
+          requested.resolve();
+          return result;
+        };
+        const session = await first.manager.createSession({
+          cwd: root,
+          llmConnectionId: FAKE_CONNECTION_ID,
+          llmConnectionSlug: 'fake',
+          model: 'fake-model',
+          permissionMode: 'ask',
+        });
+        const started = await first.composition.handlers['turn.start'](
+          {
+            sessionId: session.id,
+            turnId: 'reopen-handoff-turn',
+            content: { text: 'continue after restart' },
+            maxSteps: 4,
+          },
+          {
+            hostEpoch: 'execution-composition-test',
+            connectionId: 'client',
+            principal: 'local_os_user',
+            acquireResidency: () => residencies.acquire('test-operation'),
+          },
+        );
+        assert.equal(started.ok, true, JSON.stringify(started));
+        await entered.promise;
+        assert.ok(first.composition.prepareHandoff);
+        const preparing = first.composition.prepareHandoff(
+          'execution-composition-test',
+          new AbortController().signal,
+        );
+        await requested.promise;
+        boundary.resolve();
+        const preparation = await preparing;
+        assert.ok(preparation);
+        assert.equal(await preparation.seal(), true);
+        const transferred = await preparation.residencies();
+        assert.ok(transferred);
+        assert.equal(
+          residencies.hasDrainResidenciesExcept(transferred),
+          false,
+          JSON.stringify(residencies.snapshot()),
+        );
+        await preparation.detach();
+        first.composition.beginDrain();
+        await first.composition.close();
+        assert.equal(dispatches, 1);
+        await owner.close();
+
+        successorOwner = await tryAcquireInteractiveRootOwner(
+          await resolveStorageRoot({ path: root, kind: 'interactive' }),
+        );
+        assert.ok(successorOwner);
+        successor = await createCapturedExecutionComposition(successorOwner, {
+          primaryBackendFactory: backendFactory,
+        });
+        const stores = await openInteractiveExecutionStoresForWrite(successorOwner.lease);
+        await waitFor(
+          async () =>
+            (await stores.runtimeEventStore.listSessionInvocations(session.id)).some(
+              (run) => runtimeInvocationOutcome(run) === 'completed',
+            ),
+          5_000,
+        );
+        const runs = await stores.runtimeEventStore.listSessionInvocations(session.id);
+        assert.equal(runs.length, 2);
+        assert.equal(new Set(runs.map((run) => run.turnId)).size, 1);
+        assert.equal(
+          runs.filter((run) => run.terminalEvent && runtimeHandoffPause(run.terminalEvent)).length,
+          1,
+        );
+        assert.equal(runs.filter((run) => runtimeInvocationOutcome(run) === 'completed').length, 1);
+        assert.equal(dispatches, 2);
+      } finally {
+        boundary.resolve();
+        first.composition.beginDrain();
+        await first.composition.close();
+        successor?.composition.beginDrain();
+        await successor?.composition.close();
+        await successorOwner?.close();
+      }
+    });
   });
-});
+}
 
 test('production recovery leaves upgrade residue for explicitly started maintenance', async () => {
   await withCompositionRoot(async ({ root, owner }) => {

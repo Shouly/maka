@@ -111,6 +111,7 @@ test('conversation copy discovers linked children in persisted retired tool resu
     }),
     [
       {
+        kind: 'subagent',
         childSessionId: 'child-session',
         runId: 'child-run',
         turnId: 'child-turn',

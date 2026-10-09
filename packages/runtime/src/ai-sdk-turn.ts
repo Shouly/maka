@@ -149,14 +149,17 @@ import {
   stableHash,
   toolCatalogHash,
 } from './request-shape.js';
-import { recoverActivatedToolNames, toolAvailabilityHash } from './tool-availability.js';
+import {
+  recoverActivatedToolNames,
+  recoverTurnToolSearchNames,
+  toolAvailabilityHash,
+} from './tool-availability.js';
 import { ProviderRequestTelemetry } from './provider-request-telemetry.js';
 import { AiSdkMessageProjection } from './ai-sdk-message-projection.js';
 import { ToolAvailabilityRuntime, type ToolAvailabilityPlan } from './tool-availability.js';
 import { renderSwarmModePrompt } from './swarm-mode.js';
 import { renderGraphModePrompt } from './graph-mode.js';
 import { MEMORY_MUTATING_TOOL_NAMES } from './memory-tools.js';
-import { modelUsesNativeOpenAiResponses } from './model-runtime.js';
 import {
   applyRuntimeEventContextBudget,
   mergeContextBudgetDiagnostic,
@@ -970,6 +973,17 @@ export class AiSdkTurn {
     this.deps
       .snapshotToolAvailability()
       .runtime.seedActivation(this.activeTools, recoverActivatedToolNames(priorReplay.messages));
+    if (input.continuation?.sourceTurnId === this.turnId) {
+      // A physical handoff continues this Turn. Withholding wires reset for
+      // fresh Turns, but must retain this Turn's admitted search results.
+      this.deps
+        .snapshotToolAvailability()
+        .runtime.seedActivation(
+          this.activeTools,
+          recoverTurnToolSearchNames(input.runtimeContext ?? [], this.turnId),
+          'same_turn_continuation',
+        );
+    }
     if (input.continuation && priorReplay.messages.length === 0) {
       const replay = priorReplayFailureTrace(priorReplay);
       const error = new ContinuationReplayEmptyError(replay.gate, replay.diagnosticCodes);

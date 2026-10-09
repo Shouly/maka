@@ -23,7 +23,10 @@ import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import { testInvocationRecord } from '@maka/runtime/test-only/invocation-fixture';
 import type { SessionHeader, StoredMessage } from '@maka/core/session';
 import { agentGraphIdForRootSession } from '@maka/runtime/stream-graph-coordinator';
-import { collectConversationCopyLinkedChildReferences } from '@maka/runtime/conversation-copy';
+import {
+  collectConversationCopyLinkedChildReferences,
+  type ConversationCopyChildNotification,
+} from '@maka/runtime/conversation-copy';
 import {
   agentGraphRevisionAdmissionSessionIds,
   prepareAgentGraphRevisionReferences,
@@ -72,6 +75,148 @@ test('Side Conversation references accept terminal linked children as snapshots'
   assert.equal(accepted.ok, true);
   if (!accepted.ok) assert.fail('Expected accepted Side Conversation references');
   assert.deepEqual([...accepted.references.keys()], [CHILD_SESSION_ID]);
+});
+
+test('ordinary branches accept terminal Graph children for independent snapshots', async () => {
+  const accepted = await prepare({ kind: 'branch' });
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) assert.fail('Expected accepted branch snapshot');
+  assert.deepEqual([...accepted.references.get(CHILD_SESSION_ID)!.runIds], [CHILD_RUN_ID]);
+  assert.deepEqual(
+    [...accepted.references.get(CHILD_SESSION_ID)!.artifactIds],
+    [CHILD_ARTIFACT_ID],
+  );
+});
+
+test('every copy kind accepts an ordinary Agent launch receipt after its exact run ends', async () => {
+  for (const kind of ['branch', 'revision', 'side_conversation'] as const) {
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      const receipt = linkedSubagentResult('running', { artifactIds: [] });
+      const accepted = await prepare({
+        kind,
+        messages: [receipt],
+        sessionHeaders: [sessionHeader(ROOT_SESSION_ID), childHeader({ graph: false })],
+        runs: [agentRun({ status })],
+      });
+      assert.equal(accepted.ok, true, `${kind}: ${status}`);
+      if (!accepted.ok) assert.fail('Expected the ended child run to admit its launch receipt');
+      assert.deepEqual([...accepted.references.get(CHILD_SESSION_ID)!.runIds], [CHILD_RUN_ID]);
+      assert.deepEqual([...accepted.references.get(CHILD_SESSION_ID)!.artifactIds], []);
+      assert.equal(
+        receipt.content.kind === 'subagent' && receipt.content.status,
+        'running',
+        'admission does not mutate the source launch receipt',
+      );
+    }
+  }
+});
+
+test('a later revision can retain an ordinary Agent owned by its original family member', async () => {
+  const revision = {
+    ...sessionHeader('revision-source'),
+    revisionRootSessionId: ROOT_SESSION_ID,
+  };
+  const accepted = await prepare({
+    sourceHeader: revision,
+    messages: [linkedSubagentResult('running', { artifactIds: [] })],
+    sessionHeaders: [sessionHeader(ROOT_SESSION_ID), revision, childHeader({ graph: false })],
+  });
+  assert.equal(accepted.ok, true);
+  if (!accepted.ok) assert.fail('Expected a retained same-family child');
+  assert.deepEqual([...accepted.references.get(CHILD_SESSION_ID)!.runIds], [CHILD_RUN_ID]);
+});
+
+test('an ordinary Agent receipt cannot bypass live, run, or ownership boundaries', async () => {
+  const ordinaryHeaders = [sessionHeader(ROOT_SESSION_ID), childHeader({ graph: false })];
+  const receipt = linkedSubagentResult('running', { artifactIds: [] });
+  const cases: ReadonlyArray<{
+    name: string;
+    input: PrepareOverrides;
+    code: 'session_busy' | 'operation_unavailable';
+  }> = [
+    { name: 'active child', input: { childActive: true }, code: 'session_busy' },
+    {
+      name: 'unfinished child run',
+      input: { runs: [agentRun({ status: 'running' })] },
+      code: 'session_busy',
+    },
+    {
+      name: 'a later run is live',
+      input: {
+        runs: [
+          agentRun(),
+          agentRun({ runId: 'later-run', turnId: 'later-turn', status: 'running' }),
+        ],
+      },
+      code: 'session_busy',
+    },
+    {
+      name: 'missing run anchor',
+      input: { messages: [linkedSubagentResult('running', { runId: undefined })] },
+      code: 'operation_unavailable',
+    },
+    { name: 'missing run', input: { runs: [] }, code: 'operation_unavailable' },
+    {
+      name: 'wrong run turn',
+      input: { runs: [agentRun({ turnId: 'other-turn' })] },
+      code: 'operation_unavailable',
+    },
+    {
+      name: 'another session owns the run',
+      input: { runs: [{ ...agentRun(), sessionId: 'other-child' }] },
+      code: 'operation_unavailable',
+    },
+    {
+      name: 'another family owns the child',
+      input: {
+        sessionHeaders: [
+          sessionHeader(ROOT_SESSION_ID),
+          childHeader({ graph: false, parentSessionId: 'other-root' }),
+        ],
+      },
+      code: 'operation_unavailable',
+    },
+    {
+      name: 'child spawned beyond the copy boundary',
+      input: {
+        sessionHeaders: [
+          sessionHeader(ROOT_SESSION_ID),
+          childHeader({ graph: false, parentTurnId: 'later-turn' }),
+        ],
+      },
+      code: 'operation_unavailable',
+    },
+    {
+      name: 'waiting is not a launch receipt',
+      input: { messages: [linkedSubagentResult('waiting_for_user')] },
+      code: 'session_busy',
+    },
+    {
+      name: 'terminal status still must match',
+      input: {
+        messages: [linkedSubagentResult('completed')],
+        runs: [agentRun({ status: 'failed' })],
+      },
+      code: 'operation_unavailable',
+    },
+    {
+      name: 'wrong artifact turn',
+      input: { messages: [linkedSubagentResult('completed')], artifactTurnId: 'other-turn' },
+      code: 'operation_unavailable',
+    },
+  ];
+  for (const kind of ['branch', 'revision', 'side_conversation'] as const) {
+    for (const policyCase of cases) {
+      const outcome = await prepare({
+        kind,
+        messages: [receipt],
+        sessionHeaders: ordinaryHeaders,
+        ...policyCase.input,
+      });
+      assert.equal(outcome.ok, false, `${kind}: ${policyCase.name}`);
+      if (!outcome.ok) assert.equal(outcome.code, policyCase.code, `${kind}: ${policyCase.name}`);
+    }
+  }
 });
 
 test('Side Conversation references accept terminal non-Graph child Sessions as snapshots', async () => {
@@ -125,7 +270,7 @@ test('Side Conversation rejects a retained child without a terminal result snaps
   assert.deepEqual(outcome, {
     ok: false,
     code: 'operation_unavailable',
-    message: 'Side Conversation requires a terminal result for every retained linked child',
+    message: 'Conversation copy requires a result for every retained linked child',
   });
 });
 
@@ -245,10 +390,6 @@ test('Agent Graph revision references reject invalid ownership boundaries', asyn
   });
   assert.equal(wrongGraph.ok, false);
   if (!wrongGraph.ok) assert.equal(wrongGraph.code, 'operation_unavailable');
-
-  const branch = await prepare({ kind: 'branch' });
-  assert.equal(branch.ok, false);
-  if (!branch.ok) assert.equal(branch.code, 'operation_unavailable');
 });
 
 test('Agent Graph revision references verify resumed Run lineage', async () => {
@@ -312,8 +453,55 @@ test('Agent Graph revision admission includes only retained direct and reference
   );
 });
 
+test('notification-only files come from the exact child and an already completed turn', async () => {
+  const notification: ConversationCopyChildNotification = {
+    childSessionId: CHILD_SESSION_ID,
+    toolCallId: 'graph-call',
+    ts: 10,
+    artifactIds: [CHILD_ARTIFACT_ID],
+  };
+  const base: PrepareOverrides = {
+    kind: 'branch',
+    messages: [linkedSubagentResult('running', { artifactIds: [] })],
+    sessionHeaders: [sessionHeader(ROOT_SESSION_ID), childHeader({ graph: false })],
+    childNotifications: [notification],
+  };
+  const accepted = await prepare(base);
+  assert.ok(accepted.ok);
+  assert.deepEqual(
+    [...accepted.references.get(CHILD_SESSION_ID)!.artifactIds],
+    [CHILD_ARTIFACT_ID],
+  );
+  const continued = await prepare({
+    ...base,
+    runs: [agentRun(), agentRun({ runId: 'later-run', turnId: 'later-turn' })],
+    artifactTurnId: 'later-turn',
+  });
+  assert.ok(continued.ok, 'a later completed child turn may report its own files');
+  for (const override of [
+    { childNotifications: [{ ...notification, toolCallId: 'unrelated-call' }] },
+    { childNotifications: [{ ...notification, ts: 0 }] },
+    { artifactCreatedAt: 20 },
+    { artifactTurnId: 'unknown-turn' },
+    { artifactSessionId: 'another-child' },
+  ]) {
+    const rejected = await prepare({ ...base, ...override });
+    assert.equal(rejected.ok, false, JSON.stringify(override));
+    if (!rejected.ok) assert.equal(rejected.code, 'operation_unavailable');
+  }
+  const missing = await prepare({ ...base, artifactMissing: true });
+  assert.ok(missing.ok);
+  assert.deepEqual(
+    [...missing.references.get(CHILD_SESSION_ID)!.artifactIds],
+    [],
+    'a deleted file is not resurrected',
+  );
+});
+
 interface PrepareOverrides {
+  readonly childNotifications?: readonly ConversationCopyChildNotification[];
   readonly kind?: 'branch' | 'revision' | 'side_conversation';
+  readonly sourceHeader?: SessionHeader;
   readonly messages?: readonly StoredMessage[];
   readonly sessionHeaders?: readonly SessionHeader[];
   readonly runs?: readonly RuntimeInvocationRecord[];
@@ -321,16 +509,18 @@ interface PrepareOverrides {
   readonly graphState?: 'absent' | 'live' | 'terminal';
   readonly artifactTurnId?: string;
   readonly artifactMissing?: boolean;
+  readonly artifactCreatedAt?: number;
+  readonly artifactSessionId?: string;
   readonly childActive?: boolean;
 }
 
 async function prepare(overrides: PrepareOverrides = {}) {
-  const sourceHeader = sessionHeader(ROOT_SESSION_ID);
+  const sourceHeader = overrides.sourceHeader ?? sessionHeader(ROOT_SESSION_ID);
   const messages = overrides.messages ?? [linkedResult()];
   return prepareAgentGraphRevisionReferences(
     {
       kind: overrides.kind ?? 'revision',
-      sourceSessionId: ROOT_SESSION_ID,
+      sourceSessionId: sourceHeader.id,
       sourceHeader,
       sessionHeaders: overrides.sessionHeaders ?? [sourceHeader, childHeader()],
       copyTurnIds: [ROOT_TURN_ID],
@@ -338,6 +528,7 @@ async function prepare(overrides: PrepareOverrides = {}) {
         messages,
         runtimeEvents: [],
       }),
+      ...(overrides.childNotifications ? { childNotifications: overrides.childNotifications } : {}),
     },
     {
       runtimeEventStore: {
@@ -350,9 +541,9 @@ async function prepare(overrides: PrepareOverrides = {}) {
             ? null
             : {
                 id: artifactId,
-                sessionId,
+                sessionId: overrides.artifactSessionId ?? sessionId,
                 turnId: overrides.artifactTurnId ?? CHILD_TURN_ID,
-                createdAt: 1,
+                createdAt: overrides.artifactCreatedAt ?? 1,
                 name: 'result.txt',
                 kind: 'file',
                 relativePath: 'result.txt',
@@ -378,6 +569,7 @@ async function prepare(overrides: PrepareOverrides = {}) {
 
 function linkedSubagentResult(
   status: 'completed' | 'failed' | 'cancelled' | 'running' | 'waiting_for_user',
+  overrides: { runId?: string; artifactIds?: readonly string[] } = {},
 ): Extract<StoredMessage, { readonly type: 'tool_result' }> {
   return {
     type: 'tool_result',
@@ -391,11 +583,15 @@ function linkedSubagentResult(
       childSessionId: CHILD_SESSION_ID,
       agentName: 'worker',
       turnId: CHILD_TURN_ID,
-      runId: CHILD_RUN_ID,
+      ...(Object.hasOwn(overrides, 'runId')
+        ? overrides.runId === undefined
+          ? {}
+          : { runId: overrides.runId }
+        : { runId: CHILD_RUN_ID }),
       status,
       permissionMode: 'ask',
       summary: 'result',
-      artifactIds: [CHILD_ARTIFACT_ID],
+      artifactIds: overrides.artifactIds ?? [CHILD_ARTIFACT_ID],
     },
   };
 }

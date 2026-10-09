@@ -31,6 +31,7 @@ import {
 import {
   cloneConversationRuntimeLedger,
   collectConversationCopyLinkedChildReferences,
+  collectConversationCopyChildNotifications,
   collectConversationCopySavedOutputPaths,
   collectConversationCopySessionContextRefIds,
   collectConversationCopySessionFileRefs,
@@ -416,11 +417,21 @@ export class HostSessionRevisionCoordinator {
       messages: slice.messages,
       runtimeEvents: plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
     });
-    const referencedSessionFileIds = collectConversationCopySessionFileRefs({
-      sourceSessionId: input.sourceSessionId,
-      messages: slice.messages,
-      runtimeEvents: plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
-    });
+    const childNotifications = collectConversationCopyChildNotifications(
+      plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
+    );
+    const referencedSessionFileIds = new Set(
+      collectConversationCopySessionFileRefs({
+        sourceSessionId: input.sourceSessionId,
+        messages: slice.messages,
+        runtimeEvents: plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
+      }),
+    );
+    // An already detached snapshot owns these files itself, even though the
+    // original child turn ids are outside this parent's copied turn slice.
+    for (const notification of childNotifications) {
+      for (const artifactId of notification.artifactIds) referencedSessionFileIds.add(artifactId);
+    }
     const missingGraphChildSessionIds = agentGraphRevisionAdmissionSessionIds({
       sourceSessionId: input.sourceSessionId,
       sessionHeaders,
@@ -438,6 +449,7 @@ export class HostSessionRevisionCoordinator {
         sessionHeaders,
         copyTurnIds,
         requests: linkedChildRequests,
+        childNotifications,
       },
       {
         runtimeEventStore: this.#stores.runtimeEventStore,
@@ -524,7 +536,7 @@ export class HostSessionRevisionCoordinator {
         ...(referencedSessionFileIds.size > 0
           ? { includeArtifactIds: [...referencedSessionFileIds] }
           : {}),
-        ...(kind === 'side_conversation' && linkedReferences.references.size > 0
+        ...(kind !== 'revision' && linkedReferences.references.size > 0
           ? {
               linkedArtifacts: [...linkedReferences.references].map(([sessionId, references]) => ({
                 sessionId,
@@ -560,7 +572,7 @@ export class HostSessionRevisionCoordinator {
           contextCopy.copied.map(({ sourceRefId, targetRefId }) => [sourceRefId, targetRefId]),
         ),
         linkedChildren:
-          kind === 'side_conversation'
+          kind !== 'revision'
             ? { mode: 'snapshot' as const }
             : linkedReferences.references.size > 0
               ? {

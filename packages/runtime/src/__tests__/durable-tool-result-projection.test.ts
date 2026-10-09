@@ -22,6 +22,7 @@ import { describe, it } from 'node:test';
 import { MAX_READ_IMAGE_BYTES } from '@maka/core/attachments';
 import { DURABLE_TOOL_RESULT_PROJECTION_MAX_BYTES } from '@maka/core/durable-tool-result-projection';
 import { serializedByteLength } from '@maka/core/serialized-byte-length';
+import type { RuntimeEventFunctionResponseContent } from '@maka/core/runtime-event';
 
 import {
   decodeEffectiveToolResultProjection,
@@ -31,6 +32,46 @@ import {
 } from '../durable-tool-result-projection.js';
 
 describe('durable Tool Result projection codec', () => {
+  it('recovers only the released empty ToolSearch projection, under the ordinary codec limits', () => {
+    const content: RuntimeEventFunctionResponseContent = {
+      kind: 'function_response',
+      id: 'search',
+      name: 'ToolSearch',
+      result: { kind: 'json', value: { activated: ['BrowserClick'] } },
+      modelProjection: {
+        version: 1,
+        kind: 'content',
+        parts: [{ kind: 'text', text: 'Tool completed with no content.' }],
+      },
+    };
+    const decode = (entry: RuntimeEventFunctionResponseContent) => {
+      const effective = decodeEffectiveToolResultProjection(entry, 'session-1');
+      assert.ok(effective.kind === 'projection');
+      return effective.projection;
+    };
+    assert.deepEqual(decode(content), {
+      version: 1,
+      kind: 'json',
+      value: { activated: ['BrowserClick'] },
+    });
+    assert.deepEqual(decode({ ...content, name: 'OtherTool' }), content.modelProjection);
+    assert.deepEqual(decode({ ...content, isError: true }), content.modelProjection);
+    const truncated = { version: 1 as const, kind: 'text' as const, text: 'Truncated output' };
+    assert.deepEqual(decode({ ...content, modelProjection: truncated }), truncated);
+    assert.equal(
+      decode({
+        ...content,
+        modelProjection: { ...content.modelProjection, unexpected: true } as never,
+      }).kind,
+      'failure',
+    );
+    assert.equal(
+      decode({ ...content, result: { activated: ['x'.repeat(300_000)] } }).kind,
+      'failure',
+    );
+    assert.deepEqual(decode({ ...content, result: { activated: [5] } }), content.modelProjection);
+  });
+
   it('preserves arbitrary text and JSON content faithfully', () => {
     assert.deepEqual(
       encodeDurableToolResultOutput(
