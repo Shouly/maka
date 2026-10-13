@@ -20,7 +20,7 @@
 import { withTimeout } from '@maka/core/test-only/async-primitives';
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -376,8 +376,12 @@ async function verifyConcurrentRevisionAuthority(
     });
     assert.equal(artifactPage.kind, 'page');
     if (artifactPage.kind !== 'page') assert.fail('Branch Artifact query must return a page');
-    assert.equal(artifactPage.artifacts.length, 3);
-    assert.notEqual(artifactPage.artifacts[0]?.id, 'source-artifact');
+    assert.deepEqual(artifactPage.artifacts.map((artifact) => artifact.id).sort(), [
+      'legacy-child-artifact',
+      'source-artifact',
+      'source-projection-artifact',
+    ]);
+    assert.ok(artifactPage.artifacts.every((artifact) => artifact.sessionId === branch.id));
     const taskDocument = await tui.request('session.task.query', { sessionId: branch.id });
     assert.deepEqual(taskDocument.items, []);
 
@@ -1144,6 +1148,13 @@ async function seedSource(
       source: 'tool_result',
       now: 3,
     });
+    // The structured graph result below is a committed hand-back to source.
+    await artifacts.copyConversationArtifacts({
+      sourceSessionId: graphChild.header.id,
+      targetSessionId: linkedChildSource.id,
+      turnIds: [],
+      includeArtifactIds: ['graph-child-artifact'],
+    });
     await seedInvocation(
       execution.runtimeEventStore,
       agentRunHeader(
@@ -1456,9 +1467,11 @@ async function verifyDurableBranch(
     const execution = await openInteractiveExecutionStoresForWrite(owner.lease);
     const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
     const tasks = await openInteractiveSessionTaskStoreForWrite(owner.lease);
-    // Every copy kind that retains the upload turn must carry a rewritten,
-    // readable copy of the user-uploaded attachment (regression guard for the
-    // turn-scoped-only artifact selection that dropped user uploads).
+    const sourceUpload = (await artifacts.getInSession(sourceSessionId, 'source-artifact')).record;
+    assert.ok(sourceUpload);
+    // Every copy kind retains the upload's stable identity and bytes through
+    // its own membership (regression guard for turn-scoped selection dropping
+    // user uploads, whose turnId is an upload sentinel).
     const assertCopiedUpload = async (sessionId: string): Promise<void> => {
       const sessionMessages = await readLedgerMessages(execution.runtimeEventStore, sessionId);
       const uploadMessage = sessionMessages.find(
@@ -1467,9 +1480,14 @@ async function verifyDurableBranch(
       const uploadRef =
         uploadMessage?.type === 'user' ? uploadMessage.attachments?.[0]?.ref : undefined;
       assert.equal(uploadRef?.kind, 'session_file', `${sessionId} must retain the upload`);
-      if (uploadRef?.kind !== 'session_file') return;
+      if (uploadRef?.kind !== 'session_file')
+        assert.fail('Copied upload must remain Session-backed');
       assert.equal(uploadRef.sessionId, sessionId);
-      assert.notEqual(uploadRef.relativePath, 'source-artifact');
+      assert.equal(uploadRef.relativePath, 'source-artifact');
+      assert.deepEqual((await artifacts.getInSession(sessionId, uploadRef.relativePath)).record, {
+        ...sourceUpload,
+        sessionId,
+      });
       assert.deepEqual(await artifacts.readTextInSession(sessionId, uploadRef.relativePath), {
         ok: true,
         text: 'retained bytes',
@@ -1488,15 +1506,11 @@ async function verifyDurableBranch(
     assert.equal(ref?.kind, 'session_file');
     if (ref?.kind !== 'session_file') assert.fail('Copied attachment must remain session-backed');
     assert.equal(ref.sessionId, branchSessionId);
-    // The user-upload attachment ref carries the source artifact id; the copy
-    // must rewrite it to a fresh target artifact id, never leave the source id.
-    assert.notEqual(ref.relativePath, 'source-artifact');
+    // The ref changes Session scope, not file identity or its content locator.
+    assert.equal(ref.relativePath, 'source-artifact');
     const branchArtifacts = await artifacts.listPage(branchSessionId, { offset: 0, limit: 10 });
     assert.equal(branchArtifacts.total, 3);
-    assert.deepEqual(await artifacts.readTextInSession(branchSessionId, ref.relativePath), {
-      ok: true,
-      text: 'retained bytes',
-    });
+    await assertCopiedUpload(branchSessionId);
     assert.deepEqual(await tasks.readOrBootstrap(branchSessionId), { nextId: 1, items: [] });
     assert.deepEqual(
       (await tasks.readOrBootstrap('latest-branch-target')).items
@@ -1537,6 +1551,7 @@ async function verifyDurableBranch(
       (record) => record.name === 'projection.png',
     );
     assert.ok(copiedProjectionArtifact);
+    assert.equal(copiedProjectionArtifact.id, 'source-projection-artifact');
     assert.equal(copiedProjectionPart.ref.relativePath, copiedProjectionArtifact.id);
     const durableCopiedRuns =
       await execution.runtimeEventStore.listSessionInvocations(admittedRevisionTargetId);
@@ -1613,7 +1628,7 @@ async function verifyDurableBranch(
     assert.equal(sideConversationResult.content.items[0]?.childSessionId, undefined);
     assert.equal(sideConversationResult.content.items[0]?.runId, undefined);
     const sideConversationArtifactId = sideConversationResult.content.items[0]?.artifactIds[0];
-    assert.ok(sideConversationArtifactId);
+    assert.equal(sideConversationArtifactId, 'graph-child-artifact');
     const activeSourceSideConversationMessages = await readLedgerMessages(
       execution.runtimeEventStore,
       activeSourceSideConversationTargetId,
@@ -1702,8 +1717,32 @@ async function verifyDurableBranch(
     );
     assert.equal(
       (await artifacts.listPage(graphRevisionTargetId, { offset: 0, limit: 10 })).total,
-      0,
+      1,
+      "a retained graph control reference does not replace the receiver's independent file holding",
     );
+    assert.deepEqual(
+      await artifacts.readTextInSession(graphRevisionTargetId, 'graph-child-artifact'),
+      { ok: true, text: 'graph child result' },
+    );
+    assert.deepEqual(await artifacts.readTextInSession(graphRevisionTargetId, 'source-artifact'), {
+      ok: false,
+      reason: 'not_found',
+    });
+
+    // Removing the source memberships and running GC must not remove bytes
+    // still owned by a branch, revision, or branch of a revision.
+    await artifacts.purgeSessionArtifacts(sourceSessionId);
+    await artifacts.collectGarbage({ maxPaths: 100 });
+    assert.equal((await artifacts.getInSession(sourceSessionId, 'source-artifact')).record, null);
+    for (const sessionId of [
+      branchSessionId,
+      admittedRevisionTargetId,
+      lineageRevisionTargetId,
+      lineageBranchTargetId,
+      activeSourceSideConversationTargetId,
+    ]) {
+      await assertCopiedUpload(sessionId);
+    }
   } finally {
     await owner.close();
   }

@@ -27,6 +27,7 @@ const output = await mkdtemp(join(tmpdir(), 'maka-renderer-state-'));
 try {
   const entries = [
     'renderer-state.test.ts',
+    'session-action-errors.test.ts',
     'phase2-state.test.ts',
     'phase3-state.test.ts',
     'phase4-state.test.ts',
@@ -49,6 +50,7 @@ try {
   ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
   const files = [
     'renderer-state.test.mjs',
+    'session-action-errors.test.mjs',
     'phase2-state.test.mjs',
     'phase3-state.test.mjs',
     'phase4-state.test.mjs',

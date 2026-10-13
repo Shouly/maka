@@ -17,19 +17,17 @@
  * under the License.
  */
 
-// Where a tool result too long to show goes instead.
+// Private producer spools for foreground command output.
 //
-// A tool result stays in the model's context exactly as it was produced, so a
-// tool bounds its own output once, when the result is made. What does not fit
-// is saved here and the model is given the path: it reads the file with Read
-// or searches it with Grep when it needs the rest. One folder per Session,
-// made when the Session first saves something and removed with the Session.
-// Folders are private to the user (0700) and files too (0600).
+// The command bounds its output once. A retained spool is then published as an
+// immutable resource by stored-tool-output.ts and removed. Its filesystem path
+// never reaches a durable result, the model, or the renderer. Folders are
+// private to the user (0700), files too (0600); Session retirement clears residue.
 
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, readdir, rm, rmdir, type FileHandle } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { lstat, mkdir, open, readdir, rm, rmdir, type FileHandle } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import type { TerminalSavedOutput } from '@maka/core/events';
 import { TOOL_RESULTS_DIRECTORY } from '@maka/core/saved-output-paths';
 import { estimateTokens } from './context-budget-helpers.js';
 
@@ -52,11 +50,9 @@ function segment(value: string, what: string): string {
 }
 
 /**
- * Where a tool result too long to show is saved, one folder per Session:
- * `<stateRoot>/tool-results`. The Host's state root, because every permission
- * profile reads it, so the model can read what it is told to, and none but
- * bypass writes it, so a sandboxed command cannot change a saved result. The
- * desktop reveals a saved result only from inside this folder.
+ * Private staging root, one folder per Session: `<stateRoot>/tool-results`.
+ * This is not a resource namespace and is excluded from Session bundles.
+ * Desktop reveal downloads the committed resource through the owning Host.
  */
 export function toolResultRoot(stateRoot: string): string {
   return join(stateRoot, TOOL_RESULTS_DIRECTORY);
@@ -248,98 +244,15 @@ export async function purgeSavedOutputFolder(folder: string): Promise<void> {
 }
 
 /**
- * Put the saved file at `source` into another Session's folder, as `target`.
- * A saved tool result is never written again, so the two can be one file: a
- * hard link, and a private byte copy where the file system makes none. (A
- * background task's output is rewritten in place until its command ends, and
- * a link shows that same output under both names.) False when `source` is
- * not there, or is not a regular file, and nothing was made. Refused, like a
- * save, when the target folder was purged after `ticket`.
- */
-export async function linkSavedOutputFile(
-  source: string,
-  target: string,
-  ticket = toolResultSaveTicket(),
-): Promise<boolean> {
-  const stats = await lstat(source).catch(() => undefined);
-  if (!stats?.isFile()) return false;
-  const folder = dirname(target);
-  if (purgedSince(folder, ticket)) throw new Error('The Session was retired');
-  const made = await mkdir(folder, { recursive: true, mode: PRIVATE_FOLDER });
-  let created = false;
-  try {
-    try {
-      await link(source, target);
-      created = true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        if (made !== undefined) await rmdir(folder).catch(() => undefined);
-        return false;
-      }
-      if (code === 'EEXIST') throw error;
-      const copied = await copySavedOutputBytes(source, target, ticket);
-      if (!copied) {
-        if (made !== undefined) await rmdir(folder).catch(() => undefined);
-        return false;
-      }
-      created = true;
-    }
-    if (purgedSince(folder, ticket)) throw new Error('The Session was retired');
-    return true;
-  } catch (error) {
-    if (created) await rm(target, { force: true }).catch(() => undefined);
-    if (made !== undefined || purgedSince(folder, ticket)) {
-      await rmdir(folder).catch(() => undefined);
-    }
-    throw error;
-  }
-}
-
-/** The byte copy {@link linkSavedOutputFile} falls back to: a new, private file. */
-async function copySavedOutputBytes(
-  source: string,
-  target: string,
-  ticket: number,
-): Promise<boolean> {
-  let input: FileHandle;
-  try {
-    input = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw error;
-  }
-  try {
-    if (!(await input.stat()).isFile()) return false;
-    await writeToolResultFile(
-      target,
-      async (output) => {
-        for await (const chunk of input.createReadStream({ autoClose: false })) {
-          await output.writeFile(chunk as Buffer);
-        }
-      },
-      ticket,
-    );
-    return true;
-  } finally {
-    await input.close().catch(() => undefined);
-  }
-}
-
-/** The saved file `path` names, moved to the same name in `folder`. */
-export function savedOutputFileIn(folder: string, path: string): string {
-  return join(folder, basename(path));
-}
-
-/**
  * The sentence that stands in for a saved result: how long it is, where it is,
  * and how to get at it.
  */
-export function savedToolResultNotice(saved: SavedToolResult): string {
-  const read = 'read it with Read or search it with Grep.';
+export function savedToolResultNotice(saved: TerminalSavedOutput): string {
+  const read =
+    'use its current saved-file path with Read(file_path, offset, limit), Grep(path), Bash or Python. Copy it to the working directory before editing.';
   return saved.truncated
-    ? `Output too long to show. Its first ${formatCount(saved.chars)} characters (${TOOL_RESULT_FILE_MAX_BYTES / (1024 * 1024)} MiB) are saved to ${saved.path}; ${read}`
-    : `Output too long to show (${formatCount(saved.chars)} characters). The full output is saved to ${saved.path}; ${read}`;
+    ? `Output too long to show. Its first ${formatCount(saved.chars)} characters (${TOOL_RESULT_FILE_MAX_BYTES / (1024 * 1024)} MiB) are saved to ${saved.ref}; ${read}`
+    : `Output too long to show (${formatCount(saved.chars)} characters). The full output is saved to ${saved.ref}; ${read}`;
 }
 
 /** Tokens a text is estimated at: its UTF-8 bytes over four. */

@@ -36,7 +36,6 @@
     "./project-catalog": "./dist/project-catalog.js",
     "./project-catalog-authority": "./dist/project-catalog-authority.js",
     "./root-authority": "./dist/root-authority.js",
-    "./read-image-snapshot-store": "./dist/read-image-snapshot-store.js",
     "./runtime-event-persistence": "./dist/runtime-event-persistence.js",
     "./runtime-policy-stores": "./dist/runtime-policy-stores.js",
     "./scheduled-task-store": "./dist/scheduled-task-store.js",

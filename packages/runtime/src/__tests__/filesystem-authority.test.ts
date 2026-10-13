@@ -141,7 +141,7 @@ describe('file tools follow the execution boundary', () => {
     }
   });
 
-  test('every other boundary keeps the same paths inside the session cwd', async () => {
+  test('workspace defaults enforce cwd containment and external execution never falls back to Host', async () => {
     const { cwd, outside, cleanup } = await makeDirs();
     try {
       const tools = toolsFor();
@@ -151,11 +151,15 @@ describe('file tools follow the execution boundary', () => {
       for (const boundary of [undefined, EXTERNAL]) {
         await assert.rejects(
           runTool(toolNamed(tools, 'Write'), { file_path: target, content: 'x' }, cwd, boundary),
-          /Write path must stay inside session cwd/,
+          boundary === EXTERNAL
+            ? /External filesystem execution requires an external workspace executor/
+            : /Write path must stay inside session cwd/,
         );
         await assert.rejects(
           runTool(toolNamed(tools, 'Read'), { file_path: target }, cwd, boundary),
-          /Read path must stay inside session cwd/,
+          boundary === EXTERNAL
+            ? /External filesystem execution requires an external workspace executor/
+            : /Read path must stay inside session cwd/,
         );
         await assert.rejects(
           runTool(
@@ -164,11 +168,15 @@ describe('file tools follow the execution boundary', () => {
             cwd,
             boundary,
           ),
-          /Edit path must stay inside session cwd/,
+          boundary === EXTERNAL
+            ? /External filesystem execution requires an external workspace executor/
+            : /Edit path must stay inside session cwd/,
         );
         await assert.rejects(
           runTool(toolNamed(tools, 'Grep'), { pattern: 'hello', path: outside }, cwd, boundary),
-          /Grep path must stay inside session cwd/,
+          boundary === EXTERNAL
+            ? /External filesystem execution requires an external workspace executor/
+            : /Grep path must stay inside session cwd/,
         );
       }
       // The write never landed under any of them.
@@ -485,7 +493,7 @@ describe('file tools follow the execution boundary', () => {
         },
         snapshotImage: async (input) => {
           snapshots.push(input.bytes);
-          return { kind: 'session_context', sessionId: input.sessionId, refId: 'context-1' };
+          return { kind: 'session_file', sessionId: input.sessionId, relativePath: 'image-1' };
         },
       });
 

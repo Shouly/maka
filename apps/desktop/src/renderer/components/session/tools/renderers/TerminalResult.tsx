@@ -100,7 +100,7 @@ export const TerminalResult = memo(function TerminalResult(props: {
   }) as TerminalResultContent;
   const output = isShellOutput(merged.output) ? merged.output : undefined;
   const saved = merged.kind === 'terminal' ? merged.savedOutput : undefined;
-  const revealSaved = saved ? props.savedOutputReveal?.(saved.path) : undefined;
+  const revealSaved = saved ? props.savedOutputReveal?.(saved.ref) : undefined;
 
   const streams: { label: string; text: string; tone: 'normal' | 'error' }[] = [];
   if (output?.mode === 'pipes') {

@@ -27,10 +27,10 @@ import type {
 import type {
   ShellRunCompactResult,
   ShellRunSnapshotResult,
-  ShellRunStateResult,
   ShellRunUpdate,
   ToolResultContent,
 } from '@maka/core/events';
+import { taskOutputResourceRef } from '@maka/core/file-resources';
 import { encodedTerminalInputActionsByteLength } from '@maka/core/terminal-input';
 
 import { isActiveShellRunStatus } from '@maka/core/shell-run';
@@ -154,7 +154,9 @@ function shellRunStateContent(record: ShellRunRecord): ShellRunCompactResult {
     ...(record.timeoutMs !== undefined ? { timeoutMs: record.timeoutMs } : {}),
     ...(record.exitCode !== undefined ? { exitCode: record.exitCode } : {}),
     ...(record.failureMessage !== undefined ? { failureMessage: record.failureMessage } : {}),
-    ...(record.outputFile !== undefined ? { outputFile: record.outputFile } : {}),
+    ...(record.outputFile !== undefined
+      ? { outputRef: taskOutputResourceRef(record.shellRunId) }
+      : {}),
     revision: record.revision,
   } as const;
   return record.output.mode === 'pipes' ? { ...state, mode: 'pipes' } : { ...state, mode: 'pty' };

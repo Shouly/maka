@@ -40,12 +40,10 @@ import {
 } from './root-authority.js';
 
 export {
-  createArtifactAttachmentResourceReader,
   createAttachmentByteReader,
   createAttachmentSizeReader,
   createReadImageSnapshotPlanner,
   createReadImageSnapshotter,
-  type ArtifactAttachmentResourceReader,
   type ReadImageSnapshotPlan,
 } from './artifact-attachments.js';
 
@@ -74,11 +72,18 @@ export interface InteractiveArtifactStoreWriter extends DurableArtifactAttachmen
   copyConversationArtifacts(
     input: ConversationArtifactCopyInput,
   ): Promise<ConversationArtifactCopyResult>;
+  retainChildArtifacts: ArtifactAuthorityStore['retainChildArtifacts'];
   purgeSessionArtifacts(sessionId: string): Promise<void>;
-  reclaimUpgradeResidue: ArtifactAuthorityStore['reclaimUpgradeResidue'];
+  collectGarbage: ArtifactAuthorityStore['collectGarbage'];
+  withReadableFile: ArtifactAuthorityStore['withReadableFile'];
+  readTaskOutputSnapshot: ArtifactAuthorityStore['readTaskOutputSnapshot'];
+  readTaskOutputSnapshots: ArtifactAuthorityStore['readTaskOutputSnapshots'];
+  freezeMissingTaskOutput: ArtifactAuthorityStore['freezeMissingTaskOutput'];
   listPage: ArtifactAuthorityStore['listPage'];
   listTurnArtifacts: ArtifactAuthorityStore['listTurnArtifacts'];
   getInSession: ArtifactAuthorityStore['getInSession'];
+  getRecordInSession: ArtifactAuthorityStore['getRecordInSession'];
+  scanSessionArtifacts: ArtifactAuthorityStore['scanSessionArtifacts'];
   readTextInSession: ArtifactAuthorityStore['readTextInSession'];
   readBinaryInSession: ArtifactAuthorityStore['readBinaryInSession'];
   readChunkInSession: ArtifactAuthorityStore['readChunkInSession'];
@@ -142,6 +147,12 @@ function createWriterFacade(
     listPage: (sessionId, options) => run(() => store.listPage(sessionId, options)),
     listTurnArtifacts: (sessionId, turnId) => run(() => store.listTurnArtifacts(sessionId, turnId)),
     getInSession: (sessionId, artifactId) => run(() => store.getInSession(sessionId, artifactId)),
+    getRecordInSession: (sessionId, artifactId) =>
+      run(() => store.getRecordInSession(sessionId, artifactId)),
+    scanSessionArtifacts: (sessionId, options) => {
+      const accepted = { ...options };
+      return run(() => store.scanSessionArtifacts(sessionId, accepted));
+    },
     readTextInSession: (sessionId, artifactId, options) =>
       run(() => store.readTextInSession(sessionId, artifactId, options)),
     readBinaryInSession: (sessionId, artifactId, options) =>
@@ -164,26 +175,26 @@ function createWriterFacade(
       const acceptedInput: ConversationArtifactCopyInput = Object.freeze({
         ...input,
         turnIds: Object.freeze([...input.turnIds]),
+        ...(input.taskOutputIds ? { taskOutputIds: Object.freeze([...input.taskOutputIds]) } : {}),
         ...(input.includeArtifactIds
           ? { includeArtifactIds: Object.freeze([...input.includeArtifactIds]) }
-          : {}),
-        ...(input.linkedArtifacts
-          ? {
-              linkedArtifacts: Object.freeze(
-                input.linkedArtifacts.map((linked) =>
-                  Object.freeze({
-                    sessionId: linked.sessionId,
-                    artifactIds: Object.freeze([...linked.artifactIds]),
-                  }),
-                ),
-              ),
-            }
           : {}),
       });
       return run(() => store.copyConversationArtifacts(acceptedInput));
     },
+    retainChildArtifacts: (input) => {
+      const accepted = { ...input, artifactIds: [...input.artifactIds] };
+      return run(() => store.retainChildArtifacts(accepted));
+    },
     purgeSessionArtifacts: (sessionId) => run(() => store.purgeSessionArtifacts(sessionId)),
-    reclaimUpgradeResidue: (input) => run(() => store.reclaimUpgradeResidue(input)),
+    collectGarbage: (input) => run(() => store.collectGarbage({ ...input })),
+    readTaskOutputSnapshot: (sessionId, shellRunId) =>
+      run(() => store.readTaskOutputSnapshot(sessionId, shellRunId)),
+    readTaskOutputSnapshots: (sessionId) => run(() => store.readTaskOutputSnapshots(sessionId)),
+    freezeMissingTaskOutput: (sessionId, shellRunId) =>
+      run(() => store.freezeMissingTaskOutput(sessionId, shellRunId)),
+    withReadableFile: (sessionId, artifactId, read) =>
+      run(() => store.withReadableFile(sessionId, artifactId, read)),
     deleteUserArtifactInSession: (sessionId, artifactId) =>
       run(() => store.deleteUserArtifactInSession(sessionId, artifactId)),
     close: () => {

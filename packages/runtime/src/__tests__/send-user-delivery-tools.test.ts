@@ -47,6 +47,22 @@ import type { ToolArtifactCandidate } from '../tool-artifacts.js';
 const CWD = '/workspace/maka';
 
 describe('SendUserFile', () => {
+  test('captures execution-file bytes through the filesystem authority, never reuses an identity inferred from a path', async () => {
+    const reads: FilesystemExecuteInput[] = [];
+    const recorded: ToolArtifactCandidate[][] = [];
+    const path = '/state/file-views/session-1/files/output/log.txt';
+    const tool = buildSendUserFileTool({ filesystem: fakeFilesystem(reads) });
+    const result = await tool.impl({ files: [path], status: 'normal' }, recordingContext(recorded));
+    assert.equal(result.files[0]?.name, 'log.txt');
+    assert.equal(result.files[0]?.path, path);
+    assert.equal(recorded[0]?.[0]?.reuseArtifactId, undefined);
+    assert.deepEqual(
+      reads.map((read) => read.operation.kind),
+      ['metadata', 'read_bytes'],
+    );
+    assert.equal(Buffer.from(await recorded[0]![0]!.readContent!()).toString(), 'test-file');
+  });
+
   test('resolves relative paths from the session cwd through the filesystem authority', async () => {
     const reads: FilesystemExecuteInput[] = [];
     const recorded: ToolArtifactCandidate[][] = [];
@@ -343,7 +359,7 @@ describe('SendUserFile', () => {
           { artifactId: 'a2', name: 'c.png', path: '/w/c.png', kind: 'image', sizeBytes: 2 },
         ],
       }),
-      '2 files delivered to user.\n  /w/r.md → file_uuid: a1\n  /w/c.png → file_uuid: a2',
+      '2 files delivered to user.\n  r.md (captured from /w/r.md)\n  c.png (captured from /w/c.png)',
     );
     assert.equal(
       sendUserFileModelText({
@@ -352,7 +368,7 @@ describe('SendUserFile', () => {
         display: 'attach',
         files: [{ artifactId: 'a1', name: 'r.md', path: '/w/r.md', kind: 'file', sizeBytes: 1 }],
       }),
-      '1 file delivered to user.\n  /w/r.md → file_uuid: a1',
+      '1 file delivered to user.\n  r.md (captured from /w/r.md)',
     );
   });
 

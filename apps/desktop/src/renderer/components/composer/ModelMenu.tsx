@@ -77,6 +77,9 @@ const iconSlotClass = 'flex size-5 shrink-0 items-center justify-center text-men
 
 export function ModelMenu(props: {
   choices: readonly ChatModelChoice[];
+  /** A failed or pending catalog read is not an empty model catalog. */
+  catalogState?: 'ready' | 'loading' | 'unavailable';
+  onRetry?: () => void;
   /** The selection identity; `undefined` when nothing is chosen yet. */
   current: { connectionSlug: string | undefined; model: string | undefined } | undefined;
   /** What the chip says when `current` matches no choice (a model no longer offered). */
@@ -111,9 +114,33 @@ export function ModelMenu(props: {
     props.dense ? 'h-6 rounded-md' : 'h-8 rounded-lg',
   );
 
+  if (props.catalogState === 'loading' || props.catalogState === 'unavailable') {
+    const loading = props.catalogState === 'loading';
+    return (
+      <button
+        type="button"
+        data-maka-contract="composer-model"
+        data-maka-model-catalog={props.catalogState}
+        aria-busy={loading || undefined}
+        title={loading ? copy.loading : copy.retry}
+        disabled={loading || props.disabled || !props.onRetry}
+        onClick={props.onRetry}
+        className={chipClass}
+      >
+        {!loading && <Anthropicon name="warningCircle" size={16} className="shrink-0" />}
+        <span className="min-w-0 truncate">{loading ? copy.loading : copy.unavailable}</span>
+      </button>
+    );
+  }
+
   if (props.choices.length === 0) {
     return (
-      <button type="button" onClick={props.onOpenSettings} className={chipClass}>
+      <button
+        type="button"
+        onClick={props.onOpenSettings}
+        disabled={props.disabled}
+        className={chipClass}
+      >
         <Anthropicon name="warningCircle" size={16} className="shrink-0" />
         <span className="min-w-0 truncate">{copy.empty}</span>
       </button>

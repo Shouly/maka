@@ -18,83 +18,52 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { type BigIntStats, constants as fsConstants } from 'node:fs';
-import {
-  access,
-  copyFile,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  rm,
-  stat,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, link, lstat, mkdir, open, realpath, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, join, relative, sep } from 'node:path';
 import {
-  ARTIFACT_ENTITY_ID_MAX_CHARS,
   ARTIFACT_KINDS,
+  ArtifactSourceUnavailableError,
   ARTIFACT_SOURCES,
-  ArtifactBinaryReadResult,
-  ArtifactKind,
-  ArtifactRecord,
-  ArtifactSource,
-  ArtifactTextReadResult,
   canUserDeleteArtifact,
+  isArtifactChildResultOutput,
   isArtifactTurnKey,
   isCanonicalArtifactEntityId,
+  type ArtifactBinaryReadResult,
+  type ArtifactKind,
+  type ArtifactRecord,
+  type ArtifactSource,
+  type ArtifactTextReadResult,
 } from '@maka/core/artifacts';
 import {
   isDeepResearchArtifactRole,
   type DeepResearchArtifactRole,
 } from '@maka/core/deep-research-run';
 import { sniffAttachmentMimeType } from '@maka/core/attachments';
-import {
-  isSafeRelativeArtifactPath,
-  validateRelativeArtifactPath,
-} from './artifact-metadata-codec.js';
+import { isSafeRelativeArtifactPath } from './artifact-metadata-codec.js';
 import {
   withArtifactWriterLock,
   withLeaseBoundArtifactWriterLock,
 } from './artifact-writer-lock.js';
 import type { ArtifactWriterLockAuthority } from './root-authority.js';
-import { syncDirectory, syncDirectoryChain, syncFile } from './stable-storage.js';
-import {
-  createSqliteArtifactMetadataRepository,
-  type ArtifactMetadataChanges,
-} from './sqlite-artifact-metadata.js';
+import { syncDirectory, syncDirectoryChain } from './stable-storage.js';
+import { createSqliteArtifactMetadataRepository } from './sqlite-artifact-metadata.js';
 
 export { isSafeRelativeArtifactPath } from './artifact-metadata-codec.js';
-
 export const ARTIFACT_TEXT_PREVIEW_LIMIT_BYTES = 10 * 1024 * 1024;
 export const ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES = 50 * 1024 * 1024;
-
-const ARTIFACT_PURGE_RESOLVE_CONCURRENCY = 8;
-interface ArtifactSessionSnapshot {
-  readonly records: readonly ArtifactRecord[];
-  readonly revision: ArtifactListRevision;
-}
 
 type ArtifactReadFailure = {
   readonly ok: false;
   readonly reason: 'not_found' | 'too_large' | 'read_failed' | 'not_allowed';
 };
-
 interface PreparedArtifactRead {
   readonly ok: true;
   readonly path: string;
   readonly record: ArtifactRecord;
   readonly maxBytes: number;
 }
-
-interface ArtifactRemovalEntry {
-  readonly unlinkPath: string;
-  readonly comparisonIdentity: string;
-}
-
-type ArtifactRecordDraft = Omit<ArtifactRecord, 'sizeBytes'>;
+type ArtifactRecordDraft = Omit<ArtifactRecord, 'sizeBytes' | 'relativePath'>;
 
 export interface CreateArtifactInput {
   sessionId: string;
@@ -108,26 +77,27 @@ export interface CreateArtifactInput {
   deepResearchRole?: DeepResearchArtifactRole;
   now?: number;
   id?: string;
+  /** Atomically freeze this Session's view of a live task output. */
+  taskOutputSnapshotOf?: string;
 }
 
-/** Read one payload at a time; callbacks must not re-enter this store. */
-export interface CreateArtifactBatchInput extends Omit<CreateArtifactInput, 'content'> {
-  readContent(): Promise<string | Uint8Array>;
-}
-
+/** Source reads must not re-enter the store; owned resources use reuseArtifactId instead. */
+export type CreateArtifactBatchInput = Omit<CreateArtifactInput, 'content'> & {
+  maxBytes?: number;
+} & (
+    | { readContent(): Promise<string | Uint8Array>; reuseArtifactId?: never }
+    | { reuseArtifactId: string; readContent?: never }
+  );
 export type ArtifactListRevision = `sha256:${string}`;
-
 export interface ArtifactListPage {
   readonly revision: ArtifactListRevision;
   readonly records: readonly ArtifactRecord[];
   readonly total: number;
 }
-
 export interface ArtifactSessionEntry {
   readonly revision: ArtifactListRevision;
   readonly record: ArtifactRecord | null;
 }
-
 export type ArtifactChunkReadResult =
   | {
       readonly ok: true;
@@ -138,78 +108,69 @@ export type ArtifactChunkReadResult =
     }
   | ArtifactReadFailure
   | { readonly ok: false; readonly reason: 'out_of_range' };
-
 export interface ConversationArtifactCopyInput {
   readonly sourceSessionId: string;
   readonly targetSessionId: string;
   readonly turnIds: readonly string[];
-  /**
-   * Source-Session artifact ids to copy in addition to the turn-scoped
-   * selection, regardless of their `turnId`. Used to carry user-uploaded
-   * attachments (whose `turnId` is the upload id sentinel, not a conversation
-   * turn) that the copied transcript still references. Lenient: an id with no
-   * matching source record is a no-op.
-   */
+  /** Typed dependencies, including uploads and detached child results. Deleted resources stay absent. */
   readonly includeArtifactIds?: readonly string[];
-  readonly linkedArtifacts?: readonly {
-    readonly sessionId: string;
-    readonly artifactIds: readonly string[];
-  }[];
+  readonly taskOutputIds?: readonly string[];
 }
-
 export interface ConversationArtifactCopyResult {
-  readonly artifactIds: ReadonlyMap<string, string>;
-  readonly relativePaths: ReadonlyMap<string, string>;
+  readonly artifactIds: ReadonlySet<string>;
 }
-
+export interface ChildArtifactHandoffInput {
+  readonly sourceSessionId: string;
+  readonly targetSessionId: string;
+  readonly artifactIds: readonly string[];
+}
 export type DurableArtifactBinaryReadResult =
   | ArtifactBinaryReadResult
   | { ok: false; reason: 'session_mismatch' };
-
-/** The size an Artifact was recorded with, or why a read of it would fail first. */
 export type DurableArtifactSizeResult =
   | { ok: true; sizeBytes: number }
   | { ok: false; reason: 'not_found' | 'too_large' | 'session_mismatch' };
-
 export interface DurableArtifactAttachmentReader {
   readDurableAttachmentBinary(input: {
     artifactId: string;
     sessionId: string;
     maxBytes?: number;
   }): Promise<DurableArtifactBinaryReadResult>;
-  /** `readDurableAttachmentBinary`'s record checks, answered from metadata alone. */
   readDurableAttachmentSize(input: {
     artifactId: string;
     sessionId: string;
     maxBytes?: number;
   }): Promise<DurableArtifactSizeResult>;
 }
-
-export type ArtifactUserDeleteResult =
-  | { readonly kind: 'deleted' }
-  | { readonly kind: 'protected' }
-  | { readonly kind: 'not_found' };
-
-export interface ArtifactUpgradeCleanupInput {
+export type ArtifactUserDeleteResult = { readonly kind: 'deleted' | 'protected' | 'not_found' };
+export interface ArtifactGarbageCollectionInput {
   readonly after?: string;
   readonly maxPaths: number;
 }
-
-export interface ArtifactUpgradeCleanupResult {
+export interface ArtifactGarbageCollectionResult {
   readonly nextAfter: string | null;
   readonly processedPaths: number;
   readonly failedPaths: number;
 }
-
 export interface ArtifactAuthorityStore extends DurableArtifactAttachmentReader {
   create(input: CreateArtifactInput): Promise<ArtifactRecord>;
   createBatch(inputs: readonly CreateArtifactBatchInput[]): Promise<ArtifactRecord[]>;
-  close(): void;
   copyConversationArtifacts(
     input: ConversationArtifactCopyInput,
   ): Promise<ConversationArtifactCopyResult>;
+  /** Commit a hand-back once per receiver/source/resource; replay respects later deletion. */
+  retainChildArtifacts(input: ChildArtifactHandoffInput): Promise<readonly string[]>;
+  readTaskOutputSnapshot(sessionId: string, shellRunId: string): Promise<string | null | undefined>;
+  readTaskOutputSnapshots(sessionId: string): Promise<ReadonlyMap<string, string | null>>;
+  freezeMissingTaskOutput(sessionId: string, shellRunId: string): Promise<void>;
+  /** Trusted storage adapter only. The callback runs under the GC/publication lock and must not re-enter. */
+  withReadableFile<T>(
+    sessionId: string,
+    artifactId: string,
+    read: (path: string, record: ArtifactRecord) => Promise<T>,
+  ): Promise<T>;
   purgeSessionArtifacts(sessionId: string): Promise<void>;
-  reclaimUpgradeResidue(input: ArtifactUpgradeCleanupInput): Promise<ArtifactUpgradeCleanupResult>;
+  collectGarbage(input: ArtifactGarbageCollectionInput): Promise<ArtifactGarbageCollectionResult>;
   deleteOwnedArtifactInSession(
     sessionId: string,
     artifactId: string,
@@ -225,6 +186,12 @@ export interface ArtifactAuthorityStore extends DurableArtifactAttachmentReader 
   ): Promise<ArtifactListPage>;
   listTurnArtifacts(sessionId: string, turnId: string): Promise<ArtifactRecord[]>;
   getInSession(sessionId: string, artifactId: string): Promise<ArtifactSessionEntry>;
+  /** Internal reads do not compute a presentation-list revision. */
+  getRecordInSession(sessionId: string, artifactId: string): Promise<ArtifactRecord | undefined>;
+  scanSessionArtifacts(
+    sessionId: string,
+    options: { afterArtifactId?: string; limit: number },
+  ): Promise<readonly ArtifactRecord[]>;
   readTextInSession(
     sessionId: string,
     artifactId: string,
@@ -240,13 +207,12 @@ export interface ArtifactAuthorityStore extends DurableArtifactAttachmentReader 
     artifactId: string,
     options: { offset: number; maxBytes: number },
   ): Promise<ArtifactChunkReadResult>;
+  close(): void;
 }
-
 export interface ArtifactStoreWriteAuthority {
   readonly store: ArtifactAuthorityStore;
   close(): void;
 }
-
 export function createSqliteArtifactStoreWriteAuthority(
   workspaceRoot: string,
   options: {
@@ -260,332 +226,302 @@ export function createSqliteArtifactStoreWriteAuthority(
     options.assertAuthority,
     options.leaseBoundWriterLockAuthority,
   );
-  return Object.freeze({
-    store,
-    close: () => store.close(),
-  });
+  return Object.freeze({ store, close: () => store.close() });
 }
 
 class SqliteArtifactStore implements ArtifactAuthorityStore {
   private artifactRoot: string;
-  private records: ArtifactRecord[] = [];
   private queue: Promise<void> = Promise.resolve();
-
   constructor(
     private workspaceRoot: string,
-    private readonly metadataRepository: ReturnType<typeof createSqliteArtifactMetadataRepository>,
+    private readonly metadata: ReturnType<typeof createSqliteArtifactMetadataRepository>,
     private readonly assertAuthority?: () => Promise<void>,
-    private readonly leaseBoundWriterLockAuthority?: ArtifactWriterLockAuthority,
+    private readonly writerAuthority?: ArtifactWriterLockAuthority,
   ) {
     this.artifactRoot = join(workspaceRoot, 'artifacts');
   }
-
   close(): void {
-    this.metadataRepository.close();
+    this.metadata.close();
   }
 
   async create(input: CreateArtifactInput): Promise<ArtifactRecord> {
-    const acceptedInput: CreateArtifactInput = Object.freeze({
+    const accepted = {
       ...input,
       content: typeof input.content === 'string' ? input.content : new Uint8Array(input.content),
-    });
-    const draft = prepareArtifactDraft(acceptedInput);
-    const { id, name, relativePath } = draft;
-    return this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      const existing = this.records.find((record) => record.id === id);
-      if (existing) {
-        return this.replayExistingArtifactUnlocked(existing, acceptedInput, {
-          id,
-          name,
-          relativePath,
-        });
+    };
+    const draft = prepareArtifactDraft(accepted);
+    return this.enqueueLocked(async () => {
+      const existing = this.metadata.readInSession(accepted.sessionId, draft.id);
+      if (existing) return this.replay(existing, accepted, draft);
+      const identity = this.metadata.readIdentity(draft.id, accepted.sessionId);
+      if (identity) {
+        this.assertReplayMetadata(identity, accepted, draft);
+        if (basename(identity.relativePath) !== sha256(Buffer.from(accepted.content)))
+          throw artifactReplayConflict(draft.id);
       }
-      return this.publishNewArtifactUnlocked(draft, (targetPath) =>
-        writeFile(targetPath, acceptedInput.content, { flag: 'wx' }),
+      const record = await this.stageArtifactContent(
+        identity ?? draft,
+        Buffer.from(accepted.content),
       );
+      this.metadata.applyChanges({
+        upserts: [record],
+        taskOutputSnapshots: snapshotBinding(accepted, record.id),
+      });
+      return record;
     });
   }
 
-  /** Publish new records together, after every payload is durable. No partial batch is visible. */
   async createBatch(inputs: readonly CreateArtifactBatchInput[]): Promise<ArtifactRecord[]> {
     const accepted = inputs.map((input) => ({
+      input: { ...input },
       draft: prepareArtifactDraft(input),
-      readContent: input.readContent,
     }));
-    if (new Set(accepted.map(({ draft }) => draft.id)).size !== accepted.length) {
+    if (new Set(accepted.map(({ draft }) => draft.id)).size !== accepted.length)
       throw new Error('Duplicate Artifact identity in batch');
-    }
-    return this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      if (accepted.some(({ draft }) => this.records.some((record) => record.id === draft.id))) {
+    return this.enqueueLocked(async () => {
+      if (accepted.some(({ draft }) => this.metadata.hasIdentity(draft.id)))
         throw new Error('Artifact batch requires new identities');
-      }
-      const createdPaths: string[] = [];
       const records: ArtifactRecord[] = [];
-      try {
-        for (const { draft, readContent } of accepted) {
-          // Keep only one payload in memory. A later read failure removes the
-          // earlier staged files before any record has been published.
-          const loaded = await readContent();
-          const content = typeof loaded === 'string' ? loaded : new Uint8Array(loaded);
-          const target = join(this.artifactRoot, draft.relativePath);
-          const directory = dirname(target);
-          const createdDirectory = await mkdir(directory, { recursive: true });
-          if (createdDirectory !== undefined)
-            await syncDirectoryChain(directory, this.workspaceRoot);
-          await assertArtifactDirectory(this.artifactRoot, directory);
-          const handle = await open(target, 'wx');
-          createdPaths.push(target);
-          try {
-            await handle.writeFile(content);
-            await handle.sync();
-            records.push({ ...draft, sizeBytes: (await handle.stat()).size });
-          } finally {
-            await handle.close();
-          }
-          await syncDirectory(directory);
+      for (const { input, draft } of accepted) {
+        if (input.reuseArtifactId !== undefined) {
+          const source = this.metadata.readInSession(input.sessionId, input.reuseArtifactId);
+          if (!source) throw new ArtifactSourceUnavailableError();
+          if (input.maxBytes !== undefined && source.sizeBytes > input.maxBytes)
+            throw new ArtifactSourceUnavailableError(
+              'File resource exceeds the delivery size limit',
+            );
+          await this.requireAvailable(source);
+          records.push({
+            ...draft,
+            sizeBytes: source.sizeBytes,
+            relativePath: source.relativePath,
+          });
+        } else {
+          records.push(
+            await this.stageArtifactContent(draft, Buffer.from(await input.readContent())),
+          );
         }
-        await this.writeMetadataUnlocked({ upserts: records });
-        this.records = [...this.records, ...records];
-        return records.map((record) => ({ ...record }));
-      } catch (error) {
-        const cleanup = await Promise.allSettled(
-          createdPaths.map((path) => removeFileDurably(path, dirname(path))),
-        );
-        const failures = cleanup.flatMap((result) =>
-          result.status === 'rejected' ? [result.reason] : [],
-        );
-        if (failures.length > 0)
-          throw new AggregateError([error, ...failures], 'Artifact batch cleanup failed');
-        throw error;
       }
+      // No membership is visible until every payload has been admitted and made durable.
+      this.metadata.applyChanges({
+        upserts: records,
+        taskOutputSnapshots: records.flatMap((record, index) =>
+          snapshotBinding(accepted[index]!.input, record.id),
+        ),
+      });
+      return records;
     });
   }
 
   async copyConversationArtifacts(
     input: ConversationArtifactCopyInput,
   ): Promise<ConversationArtifactCopyResult> {
-    assertCanonicalArtifactEntityId(input.sourceSessionId, 'sessionId');
-    assertCanonicalArtifactEntityId(input.targetSessionId, 'sessionId');
-    if (input.sourceSessionId === input.targetSessionId) {
+    assertEntityId(input.sourceSessionId, 'sessionId');
+    assertEntityId(input.targetSessionId, 'sessionId');
+    if (input.sourceSessionId === input.targetSessionId)
       throw new Error('Artifact conversation copy requires distinct Sessions');
-    }
-    const turnIds = new Set(input.turnIds);
-    const includedArtifactIds = new Set(input.includeArtifactIds ?? []);
-    for (const turnId of turnIds) assertArtifactTurnKey(turnId);
-    const linkedArtifacts = input.linkedArtifacts ?? [];
-    const requestedLinkedArtifactIds = new Map<string, Set<string>>();
-    for (const linked of linkedArtifacts) {
-      assertCanonicalArtifactEntityId(linked.sessionId, 'sessionId');
-      if (linked.sessionId === input.targetSessionId) {
-        throw new Error('Linked Artifact copy requires a distinct source Session');
+    const turns = new Set(input.turnIds);
+    for (const turn of turns) assertTurnKey(turn);
+    const ids = new Set(input.includeArtifactIds ?? []);
+    const taskIds = new Set(input.taskOutputIds ?? []);
+    return this.enqueueLocked(async () => {
+      const snapshots = this.metadata.readTaskOutputSnapshots(input.sourceSessionId);
+      for (const id of taskIds) {
+        const resource = snapshots.get(id);
+        if (resource) ids.add(resource);
       }
-      const artifactIds = requestedLinkedArtifactIds.get(linked.sessionId) ?? new Set<string>();
-      for (const artifactId of linked.artifactIds) {
-        assertCanonicalArtifactEntityId(artifactId, 'id');
-        artifactIds.add(artifactId);
+      const selected = new Map<string, ArtifactRecord>();
+      for (const record of this.metadata.readSession(input.sourceSessionId)) {
+        if (turns.has(record.turnId) || ids.has(record.id)) selected.set(record.id, record);
       }
-      requestedLinkedArtifactIds.set(linked.sessionId, artifactIds);
-    }
-    const records = await this.enqueue(async () => {
-      await this.load();
-      const selected = this.records
-        .filter(
-          (record) => record.sessionId === input.sourceSessionId && turnIds.has(record.turnId),
-        )
-        .map((record) => ({ ...record }));
-      for (const [sessionId, artifactIds] of requestedLinkedArtifactIds) {
-        for (const artifactId of artifactIds) {
-          const record = this.records.find(
-            (candidate) => candidate.sessionId === sessionId && candidate.id === artifactId,
-          );
-          // A linked child result names every Artifact its turn held, and the
-          // ledger naming them cannot be rewritten. One that is no longer
-          // there is copied as nothing rather than failing the copy -- the
-          // caller is asking for what a past turn had, not asserting that all
-          // of it survived.
-          if (record) selected.push({ ...record });
-        }
+      const memberships: ArtifactRecord[] = [];
+      for (const record of selected.values()) {
+        await this.requireAvailable(record);
+        memberships.push({ ...record, sessionId: input.targetSessionId });
       }
-      const selectedIds = new Set(selected.map((record) => record.id));
-      for (const record of this.records) {
-        if (
-          record.sessionId === input.sourceSessionId &&
-          includedArtifactIds.has(record.id) &&
-          !selectedIds.has(record.id)
-        ) {
-          selected.push({ ...record });
-          selectedIds.add(record.id);
-        }
-      }
-      return selected;
+      this.metadata.applyChanges({
+        upserts: memberships,
+        copyHandoffs: input,
+        taskOutputSnapshots: [...taskIds]
+          .filter((id) => snapshots.has(id))
+          .map((shellRunId) => ({
+            sessionId: input.targetSessionId,
+            shellRunId,
+            artifactId: snapshots.get(shellRunId)!,
+          })),
+      });
+      return { artifactIds: new Set(selected.keys()) };
     });
-
-    const artifactIds = new Map<string, string>();
-    const relativePaths = new Map<string, string>();
-    for (const record of records) {
-      const targetId = conversationCopyArtifactId(
-        record.sessionId,
-        input.targetSessionId,
-        record.id,
-      );
-      const prepared = await this.enqueue(() => this.prepareRecordRead(record, record.sizeBytes));
-      if (!prepared.ok) {
-        throw new Error(`Artifact ${record.id} could not be copied: ${prepared.reason}`);
-      }
-      const created = await this.copyConversationArtifact(
-        prepared,
-        input.targetSessionId,
-        targetId,
-      );
-      artifactIds.set(record.id, created.id);
-      relativePaths.set(record.relativePath, created.relativePath);
-    }
-    return { artifactIds, relativePaths };
   }
 
-  private copyConversationArtifact(
-    prepared: PreparedArtifactRead,
-    targetSessionId: string,
-    targetId: string,
-  ): Promise<ArtifactRecord> {
-    const source = prepared.record;
-    const name = sanitizeArtifactName(source.name);
-    const relativePath = `${targetSessionId}/${targetId}-${name}`;
-    assertCanonicalArtifactEntityId(targetId, 'id');
-    validateRelativeArtifactPath(relativePath);
-    return this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      if (this.records.some((record) => record.id === targetId)) {
-        throw new Error(`Artifact target already exists: ${targetId}`);
+  retainChildArtifacts(input: ChildArtifactHandoffInput): Promise<readonly string[]> {
+    const { sourceSessionId, targetSessionId } = input;
+    assertEntityId(sourceSessionId, 'sourceSessionId');
+    assertEntityId(targetSessionId, 'targetSessionId');
+    if (sourceSessionId === targetSessionId)
+      throw new Error('Artifact hand-back requires distinct Sessions');
+    const ids = [...new Set(input.artifactIds)];
+    for (const id of ids) assertEntityId(id, 'artifactId');
+    return this.enqueueLocked(async () => {
+      const memberships: ArtifactRecord[] = [];
+      const retained: string[] = [];
+      for (const id of ids) {
+        if (this.metadata.hasHandoff(targetSessionId, sourceSessionId, id)) {
+          // The source may already be gone. A receipt records a completed grant,
+          // not permission to recreate one that the receiver subsequently removed.
+          if (this.metadata.readInSession(targetSessionId, id)) retained.push(id);
+          continue;
+        }
+        const record = this.metadata.readInSession(sourceSessionId, id);
+        if (!record || !isArtifactChildResultOutput(record)) continue;
+        await this.requireAvailable(record);
+        memberships.push({ ...record, sessionId: targetSessionId });
+        retained.push(id);
       }
-      return this.publishNewArtifactUnlocked(
-        {
-          ...source,
-          id: targetId,
+      // Membership and completion evidence are one transaction under the same
+      // publication/delete lock. A crash cannot leave only one half committed.
+      this.metadata.applyChanges({
+        upserts: memberships,
+        handoffs: memberships.map((record) => ({
           sessionId: targetSessionId,
-          name,
-          relativePath,
-        },
-        (targetPath) => copyFile(prepared.path, targetPath, fsConstants.COPYFILE_EXCL),
-        source.sizeBytes,
-      );
+          sourceSessionId,
+          artifactId: record.id,
+        })),
+      });
+      return retained;
     });
   }
 
-  private async publishNewArtifactUnlocked(
-    draft: ArtifactRecordDraft,
-    writeTarget: (targetPath: string) => Promise<void>,
-    expectedSize?: number,
-  ): Promise<ArtifactRecord> {
-    const target = join(this.artifactRoot, draft.relativePath);
-    const targetDirectory = dirname(target);
-    const createdDirectory = await mkdir(targetDirectory, { recursive: true });
-    if (createdDirectory !== undefined) {
-      await syncDirectoryChain(targetDirectory, this.workspaceRoot);
-    }
-    await assertArtifactDirectory(this.artifactRoot, targetDirectory);
-    await rm(target, { force: true });
-    try {
-      await writeTarget(target);
-      await syncFile(target);
-      await syncDirectory(targetDirectory);
-      const size = await stat(target);
-      if (expectedSize !== undefined && size.size !== expectedSize) {
-        throw new Error(`Artifact source changed while copying: ${draft.id}`);
+  readTaskOutputSnapshot(
+    sessionId: string,
+    shellRunId: string,
+  ): Promise<string | null | undefined> {
+    return this.enqueue(async () => this.metadata.readTaskOutputSnapshot(sessionId, shellRunId));
+  }
+  readTaskOutputSnapshots(sessionId: string): Promise<ReadonlyMap<string, string | null>> {
+    return this.enqueue(async () => this.metadata.readTaskOutputSnapshots(sessionId));
+  }
+  freezeMissingTaskOutput(sessionId: string, shellRunId: string): Promise<void> {
+    assertEntityId(sessionId, 'sessionId');
+    assertEntityId(shellRunId, 'shellRunId');
+    return this.enqueueLocked(async () =>
+      this.metadata.applyChanges({
+        taskOutputSnapshots: [{ sessionId, shellRunId, artifactId: null }],
+      }),
+    );
+  }
+  withReadableFile<T>(
+    sessionId: string,
+    artifactId: string,
+    read: (path: string, record: ArtifactRecord) => Promise<T>,
+  ): Promise<T> {
+    return this.enqueueLocked(async () => {
+      const prepared = await this.prepareRead(sessionId, artifactId, Number.MAX_SAFE_INTEGER);
+      if (!prepared.ok) {
+        const message = `File resource is unavailable in this Session: ${prepared.reason}`;
+        if (prepared.reason === 'not_found') throw new ArtifactSourceUnavailableError(message);
+        throw new Error(message);
       }
-      const record: ArtifactRecord = { ...draft, sizeBytes: size.size };
-      const nextRecords = [...this.records, record];
-      await this.writeMetadataUnlocked({ upserts: [record] });
-      this.records = nextRecords;
-      return { ...record };
-    } catch (error) {
-      await removeFileDurably(target, targetDirectory).catch(() => undefined);
-      throw error;
-    }
-  }
-
-  async purgeSessionArtifacts(sessionId: string): Promise<void> {
-    assertCanonicalArtifactEntityId(sessionId, 'sessionId');
-    await this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      await this.purgeRecordsUnlocked(
-        this.records.filter((record) => record.sessionId === sessionId),
-      );
+      return read(prepared.path, prepared.record);
     });
   }
 
-  /**
-   * Deletes the files the v1 upgrade recorded as no longer named by any record.
-   *
-   * A path some record has since claimed keeps its bytes. A note is discharged
-   * once its file is gone, and a file that will not go keeps only its own note
-   * rather than holding up the ones behind it.
-   */
-  async reclaimUpgradeResidue(
-    input: ArtifactUpgradeCleanupInput,
-  ): Promise<ArtifactUpgradeCleanupResult> {
-    if (!Number.isSafeInteger(input.maxPaths) || input.maxPaths < 1 || input.maxPaths > 1024) {
-      throw new TypeError('Artifact cleanup path limit must be between 1 and 1024');
+  private async stageArtifactContent(
+    draft: ArtifactRecordDraft,
+    bytes: Uint8Array,
+  ): Promise<ArtifactRecord> {
+    const digest = sha256(bytes);
+    const relativePath = `blobs/sha256/${digest.slice(0, 2)}/${digest}`;
+    const record = { ...draft, relativePath, sizeBytes: bytes.byteLength };
+    const target = join(this.artifactRoot, relativePath);
+    const directory = dirname(target);
+    const stagingRelative = `blobs/sha256/${digest.slice(0, 2)}/.${randomUUID()}.tmp`;
+    const staging = join(this.artifactRoot, stagingRelative);
+    await mkdir(this.artifactRoot, { recursive: true, mode: 0o700 });
+    await ensureRealDirectory(this.artifactRoot);
+    let parent = this.artifactRoot;
+    for (const segment of ['blobs', 'sha256', digest.slice(0, 2)]) {
+      parent = join(parent, segment);
+      await mkdir(parent, { mode: 0o700 }).catch((error) => {
+        if (error.code !== 'EEXIST') throw error;
+      });
+      await ensureRealDirectory(parent);
     }
-    const after = input.after ?? '';
-    const maxPaths = input.maxPaths;
-    return this.enqueueMutation(async () => {
-      const recorded = this.metadataRepository.readUpgradeOrphanPaths(after, maxPaths + 1);
+    await syncDirectoryChain(directory, this.workspaceRoot);
+    this.metadata.queueUnreferencedPaths([stagingRelative, relativePath]);
+    const handle = await open(staging, 'wx', process.platform === 'win32' ? 0o600 : 0o400);
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      try {
+        await link(staging, target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        const prepared = await this.prepareRecordRead(record, bytes.byteLength);
+        const existing = prepared.ok ? await readPreparedBytes(prepared) : prepared;
+        if (!existing.ok || sha256(existing.bytes) !== digest)
+          throw new Error('Immutable Artifact blob has different content');
+      }
+      // Existing names may be leftovers of a publication interrupted before directory sync.
+      await syncDirectoryChain(directory, this.workspaceRoot);
+    } finally {
+      await unlink(staging).catch(() => undefined);
+      await syncDirectory(directory);
+    }
+    return record;
+  }
+
+  purgeSessionArtifacts(sessionId: string): Promise<void> {
+    assertEntityId(sessionId, 'sessionId');
+    return this.enqueueLocked(async () =>
+      this.metadata.applyChanges({ deleteSessions: [sessionId] }),
+    );
+  }
+
+  async collectGarbage(
+    input: ArtifactGarbageCollectionInput,
+  ): Promise<ArtifactGarbageCollectionResult> {
+    if (!Number.isSafeInteger(input.maxPaths) || input.maxPaths < 1 || input.maxPaths > 1024)
+      throw new TypeError('Artifact cleanup path limit must be between 1 and 1024');
+    const { after = '', maxPaths } = input;
+    return this.enqueueLocked(async () => {
+      const recorded = this.metadata.readGarbagePaths(after, maxPaths + 1);
       const selected = recorded.slice(0, maxPaths);
       const directories = new Set<string>();
       const discharged: string[] = [];
       let failedPaths = 0;
-      let realArtifactRoot: string | undefined;
-      try {
-        for (const relativePath of selected) {
-          if (
-            this.metadataRepository.hasRelativePath(relativePath) ||
-            !isSafeRelativeArtifactPath(relativePath)
-          ) {
-            discharged.push(relativePath);
-            continue;
-          }
-          const entry = await resolveArtifactRemovalEntry(this.artifactRoot, relativePath);
-          if (!entry) {
-            discharged.push(relativePath);
-            continue;
-          }
-          realArtifactRoot ??= await ensureRealDirectory(this.artifactRoot);
-          if (!isInsideOrSamePath(realArtifactRoot, dirname(entry.unlinkPath))) {
-            failedPaths += 1;
-            continue;
-          }
-          const artifactIds = new Set([
-            ...artifactIdsFromUpgradeOrphanPath(relativePath),
-            ...artifactIdsFromUpgradeOrphanPath(entry.unlinkPath),
-          ]);
-          if (
-            artifactIds.size > 0 &&
-            (await this.hasClaimedRemovalIdentityUnlocked(
-              [...artifactIds],
-              entry.comparisonIdentity,
-            ))
-          ) {
-            discharged.push(relativePath);
-            continue;
-          }
-          try {
-            await unlink(entry.unlinkPath);
-            directories.add(dirname(entry.unlinkPath));
-          } catch (error) {
-            if (!isNotFound(error)) {
-              failedPaths += 1;
-              continue;
-            }
-          }
-          discharged.push(relativePath);
+      for (const path of selected) {
+        // Only the content namespace and our staging names can ever be garbage.
+        if (
+          !/^blobs\/sha256\/[0-9a-f]{2}\/(?:[0-9a-f]{64}|\.[A-Za-z0-9.-]+\.tmp)$/u.test(path) ||
+          this.metadata.hasRelativePath(path)
+        ) {
+          discharged.push(path);
+          continue;
         }
-      } finally {
-        for (const directory of directories) await syncDirectory(directory);
+        try {
+          const parent = dirname(join(this.artifactRoot, path));
+          const root = await ensureRealDirectory(this.artifactRoot);
+          const canonicalParent = await realpath(parent);
+          if (!isInside(root, canonicalParent))
+            throw new Error('Artifact garbage path escaped its root');
+          // Unlink the entry, never a symlink's destination.
+          await unlink(join(canonicalParent, basename(path))).catch((error) => {
+            if (!isNotFound(error)) throw error;
+          });
+          directories.add(canonicalParent);
+          discharged.push(path);
+        } catch (error) {
+          if (isNotFound(error)) discharged.push(path);
+          else failedPaths++;
+        }
       }
-      if (discharged.length > 0) this.metadataRepository.forgetUpgradeOrphanPaths(discharged);
+      for (const directory of directories) await syncDirectory(directory);
+      this.metadata.forgetGarbagePaths(discharged);
       return {
         nextAfter: recorded.length > selected.length ? selected.at(-1)! : null,
         processedPaths: selected.length,
@@ -594,527 +530,301 @@ class SqliteArtifactStore implements ArtifactAuthorityStore {
     });
   }
 
-  private async hasClaimedRemovalIdentityUnlocked(
-    artifactIds: readonly string[],
-    comparisonIdentity: string,
-  ): Promise<boolean> {
-    for (const relativePath of this.metadataRepository.readRelativePathsByCaseFoldedArtifactIds(
-      artifactIds,
-    )) {
-      const entry = await resolveArtifactRemovalEntry(this.artifactRoot, relativePath);
-      if (entry?.comparisonIdentity === comparisonIdentity) return true;
-    }
-    return false;
-  }
-
-  private async replayExistingArtifactUnlocked(
+  private assertReplayMetadata(
     existing: ArtifactRecord,
     input: CreateArtifactInput,
-    canonical: { id: string; name: string; relativePath: string },
-  ): Promise<ArtifactRecord> {
-    const expectedBytes = Buffer.from(input.content);
+    draft: ArtifactRecordDraft,
+  ): void {
+    const expected = Buffer.from(input.content);
     if (
-      existing.id !== canonical.id ||
-      existing.sessionId !== input.sessionId ||
-      existing.turnId !== input.turnId ||
-      existing.name !== canonical.name ||
-      existing.kind !== input.kind ||
-      existing.relativePath !== `${input.sessionId}/${canonical.id}-${existing.name}` ||
-      existing.sizeBytes !== expectedBytes.byteLength ||
-      existing.mimeType !== optionalCanonicalText(input.mimeType) ||
-      existing.source !== input.source ||
-      existing.summary !== optionalCanonicalText(input.summary) ||
-      existing.deepResearchRole !== input.deepResearchRole ||
+      existing.turnId !== draft.turnId ||
+      existing.name !== draft.name ||
+      existing.kind !== draft.kind ||
+      existing.sizeBytes !== expected.byteLength ||
+      existing.mimeType !== draft.mimeType ||
+      existing.source !== draft.source ||
+      existing.summary !== draft.summary ||
+      existing.deepResearchRole !== draft.deepResearchRole ||
       (input.now !== undefined && existing.createdAt !== input.now)
-    ) {
-      throw artifactReplayConflict(canonical.id);
-    }
-
-    const resolved = await resolveArtifactPath({
-      artifactRoot: this.artifactRoot,
-      relativePath: existing.relativePath,
-    });
-    if (!resolved.ok) throw artifactReplayConflict(canonical.id);
-    const payloadStat = await stat(resolved.path).catch(() => null);
-    if (
-      !payloadStat?.isFile() ||
-      payloadStat.size !== existing.sizeBytes ||
-      payloadStat.size !== expectedBytes.byteLength
-    ) {
-      throw artifactReplayConflict(canonical.id);
-    }
-    const actualBytes = await readFile(resolved.path).catch(() => null);
-    if (!actualBytes || sha256(actualBytes) !== sha256(expectedBytes)) {
-      throw artifactReplayConflict(canonical.id);
-    }
-
-    return { ...existing };
+    )
+      throw artifactReplayConflict(existing.id);
+  }
+  private async replay(
+    existing: ArtifactRecord,
+    input: CreateArtifactInput,
+    draft: ArtifactRecordDraft,
+  ): Promise<ArtifactRecord> {
+    this.assertReplayMetadata(existing, input, draft);
+    const expected = Buffer.from(input.content);
+    const prepared = await this.prepareRecordRead(existing, expected.byteLength);
+    const actual = prepared.ok ? await readPreparedBytes(prepared) : prepared;
+    if (!actual.ok || sha256(actual.bytes) !== sha256(expected))
+      throw artifactReplayConflict(existing.id);
+    this.metadata.applyChanges({ taskOutputSnapshots: snapshotBinding(input, existing.id) });
+    return existing;
+  }
+  private async requireAvailable(record: ArtifactRecord): Promise<void> {
+    const prepared = await this.prepareRecordRead(record, record.sizeBytes);
+    if (!prepared.ok || (await stat(prepared.path)).size !== record.sizeBytes)
+      throw new Error(`Artifact ${record.id} content is unavailable`);
   }
 
-  async listPage(
+  listPage(
     sessionId: string,
     options: { offset: number; limit: number },
   ): Promise<ArtifactListPage> {
     assertPageBound(options.offset, true, 'offset');
     assertPageBound(options.limit, false, 'limit');
     const { offset, limit } = options;
-    return this.enqueue(async () => {
-      await this.load();
-      const snapshot = this.sessionSnapshot(sessionId);
-      return {
-        revision: snapshot.revision,
-        records: snapshot.records.slice(offset, offset + limit).map((record) => ({ ...record })),
-        total: snapshot.records.length,
-      };
-    });
+    return this.enqueue(async () => this.metadata.readPage(sessionId, offset, limit));
   }
-
-  async listTurnArtifacts(sessionId: string, turnId: string): Promise<ArtifactRecord[]> {
-    assertCanonicalArtifactEntityId(sessionId, 'sessionId');
-    assertArtifactTurnKey(turnId);
-    return this.enqueue(async () => {
-      await this.load();
-      const snapshot = this.sessionSnapshot(sessionId);
-      return snapshot.records
-        .filter((record) => record.turnId === turnId)
-        .map((record) => ({ ...record }));
-    });
+  listTurnArtifacts(sessionId: string, turnId: string): Promise<ArtifactRecord[]> {
+    assertEntityId(sessionId, 'sessionId');
+    assertTurnKey(turnId);
+    return this.enqueue(async () =>
+      this.metadata.readSession(sessionId).filter((record) => record.turnId === turnId),
+    );
   }
-
-  async getInSession(sessionId: string, artifactId: string): Promise<ArtifactSessionEntry> {
-    return this.enqueue(async () => {
-      await this.load();
-      const snapshot = this.sessionSnapshot(sessionId);
-      const record = snapshot.records.find((candidate) => candidate.id === artifactId);
-      return {
-        revision: snapshot.revision,
-        record: record ? { ...record } : null,
-      };
-    });
+  getInSession(sessionId: string, artifactId: string): Promise<ArtifactSessionEntry> {
+    return this.enqueue(async () => this.metadata.readEntry(sessionId, artifactId));
   }
-
+  getRecordInSession(sessionId: string, artifactId: string): Promise<ArtifactRecord | undefined> {
+    return this.enqueue(async () => this.metadata.readInSession(sessionId, artifactId));
+  }
+  scanSessionArtifacts(
+    sessionId: string,
+    options: { afterArtifactId?: string; limit: number },
+  ): Promise<readonly ArtifactRecord[]> {
+    assertPageBound(options.limit, false, 'limit');
+    const { afterArtifactId = '', limit } = options;
+    return this.enqueue(async () => this.metadata.scanSession(sessionId, afterArtifactId, limit));
+  }
   readTextInSession(
     sessionId: string,
     artifactId: string,
     opts: { maxBytes?: number } = {},
   ): Promise<ArtifactTextReadResult> {
-    return this.enqueue(async () => {
-      const prepared = await this.prepareReadInSessionUnlocked(
-        sessionId,
-        artifactId,
-        opts.maxBytes ?? ARTIFACT_TEXT_PREVIEW_LIMIT_BYTES,
-      );
-      return this.readPreparedText(prepared);
+    const maxBytes = opts.maxBytes ?? ARTIFACT_TEXT_PREVIEW_LIMIT_BYTES;
+    return this.enqueueLocked(async () => {
+      const prepared = await this.prepareRead(sessionId, artifactId, maxBytes);
+      if (!prepared.ok) return prepared;
+      const result = await readPreparedBytes(prepared);
+      return result.ok ? { ok: true, text: result.bytes.toString('utf8') } : result;
     });
   }
-
   readBinaryInSession(
     sessionId: string,
     artifactId: string,
     opts: { maxBytes?: number } = {},
   ): Promise<ArtifactBinaryReadResult> {
-    return this.enqueue(async () => {
-      const prepared = await this.prepareReadInSessionUnlocked(
-        sessionId,
-        artifactId,
-        opts.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES,
-      );
-      return this.readPreparedBinary(prepared);
-    });
+    const maxBytes = opts.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES;
+    return this.enqueueLocked(async () =>
+      this.readBinary(await this.prepareRead(sessionId, artifactId, maxBytes)),
+    );
   }
-
   readChunkInSession(
     sessionId: string,
     artifactId: string,
     options: { offset: number; maxBytes: number },
   ): Promise<ArtifactChunkReadResult> {
-    return this.enqueue(async () => {
+    const { offset, maxBytes } = options;
+    return this.enqueueLocked(async () => {
       if (
-        !Number.isSafeInteger(options.offset) ||
-        options.offset < 0 ||
-        !Number.isSafeInteger(options.maxBytes) ||
-        options.maxBytes < 1
-      ) {
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(maxBytes) ||
+        maxBytes < 1
+      )
         return { ok: false, reason: 'out_of_range' };
-      }
-      const prepared = await this.prepareReadInSessionUnlocked(
-        sessionId,
-        artifactId,
-        Number.MAX_SAFE_INTEGER,
-      );
-      return prepared.ok ? readPreparedChunk(prepared, options.offset, options.maxBytes) : prepared;
+      const prepared = await this.prepareRead(sessionId, artifactId, Number.MAX_SAFE_INTEGER);
+      return prepared.ok ? readPreparedChunk(prepared, offset, maxBytes) : prepared;
     });
   }
-
-  async readDurableAttachmentBinary(input: {
+  readDurableAttachmentBinary(input: {
     artifactId: string;
     sessionId: string;
     maxBytes?: number;
   }): Promise<DurableArtifactBinaryReadResult> {
-    return this.enqueue(async () => {
-      await this.load();
-      const record = this.records.find((item) => item.id === input.artifactId);
-      if (!record) return { ok: false, reason: 'not_found' };
-      if (record.sessionId !== input.sessionId) {
-        return { ok: false, reason: 'session_mismatch' };
-      }
-      const prepared = await this.prepareRecordRead(
-        record,
-        input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES,
+    return this.enqueueLocked(async () => {
+      const record = this.metadata.readInSession(input.sessionId, input.artifactId);
+      if (!record)
+        return {
+          ok: false,
+          reason: this.metadata.hasMembership(input.artifactId) ? 'session_mismatch' : 'not_found',
+        };
+      return this.readBinary(
+        await this.prepareRecordRead(record, input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES),
       );
-      return this.readPreparedBinary(prepared);
     });
   }
-
-  async readDurableAttachmentSize(input: {
+  readDurableAttachmentSize(input: {
     artifactId: string;
     sessionId: string;
     maxBytes?: number;
   }): Promise<DurableArtifactSizeResult> {
     return this.enqueue(async () => {
-      await this.load();
-      const record = this.records.find((item) => item.id === input.artifactId);
-      if (!record) return { ok: false, reason: 'not_found' };
-      if (record.sessionId !== input.sessionId) {
-        return { ok: false, reason: 'session_mismatch' };
-      }
-      if (record.sizeBytes > (input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES)) {
+      const record = this.metadata.readInSession(input.sessionId, input.artifactId);
+      if (!record)
+        return {
+          ok: false,
+          reason: this.metadata.hasMembership(input.artifactId) ? 'session_mismatch' : 'not_found',
+        };
+      if (record.sizeBytes > (input.maxBytes ?? ARTIFACT_BINARY_PREVIEW_LIMIT_BYTES))
         return { ok: false, reason: 'too_large' };
-      }
       return { ok: true, sizeBytes: record.sizeBytes };
     });
   }
-
-  private async readPreparedText(
-    prepared: PreparedArtifactRead | ArtifactReadFailure,
-  ): Promise<ArtifactTextReadResult> {
-    if (!prepared.ok) return prepared;
-    const bytes = await readPreparedBytes(prepared);
-    return bytes.ok ? { ok: true, text: bytes.bytes.toString('utf8') } : bytes;
-  }
-
-  private async readPreparedBinary(
+  private async readBinary(
     prepared: PreparedArtifactRead | ArtifactReadFailure,
   ): Promise<ArtifactBinaryReadResult> {
     if (!prepared.ok) return prepared;
     const read = await readPreparedBytes(prepared);
     if (!read.ok) return read;
     const mimeType = sniffAllowedBinaryMime(read.bytes);
-    if (!mimeType) return { ok: false, reason: 'unsupported_mime' };
-    return { ok: true, base64: read.bytes.toString('base64'), mimeType };
+    return mimeType
+      ? { ok: true, base64: read.bytes.toString('base64'), mimeType }
+      : { ok: false, reason: 'unsupported_mime' };
   }
-
   deleteOwnedArtifactInSession(
     sessionId: string,
     artifactId: string,
     source: ArtifactSource,
   ): Promise<void> {
-    return this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      const snapshot = this.sessionSnapshot(sessionId);
-      const existing = snapshot.records.find((record) => record.id === artifactId);
-      if (!existing || existing.source !== source) {
+    return this.enqueueLocked(async () => {
+      const record = this.metadata.readInSession(sessionId, artifactId);
+      if (!record || record.source !== source)
         throw new Error('Artifact does not belong to the expected Session authority');
-      }
-      await this.purgeRecordsUnlocked([existing]);
+      this.metadata.applyChanges({ deleteReferences: [{ sessionId, artifactId }] });
     });
   }
-
   deleteUserArtifactInSession(
     sessionId: string,
     artifactId: string,
   ): Promise<ArtifactUserDeleteResult> {
-    return this.enqueueMutation(async () => {
-      await this.prepareMutationUnlocked();
-      const snapshot = this.sessionSnapshot(sessionId);
-      const existing = snapshot.records.find((record) => record.id === artifactId);
-      if (!existing) return { kind: 'not_found' };
-      if (!canUserDeleteArtifact(existing)) return { kind: 'protected' };
-      await this.purgeRecordsUnlocked([existing]);
+    return this.enqueueLocked(async () => {
+      const record = this.metadata.readInSession(sessionId, artifactId);
+      if (!record) return { kind: 'not_found' };
+      if (!canUserDeleteArtifact(record)) return { kind: 'protected' };
+      this.metadata.applyChanges({ deleteReferences: [{ sessionId, artifactId }] });
       return { kind: 'deleted' };
     });
   }
-
-  private async purgeRecordsUnlocked(records: readonly ArtifactRecord[]): Promise<void> {
-    if (records.length === 0) return;
-    const ids = new Set(records.map((record) => record.id));
-    const paths = await this.preparePurgePathsUnlocked(records);
-    await this.completePurgeUnlocked(ids, paths);
-  }
-
-  private async preparePurgePathsUnlocked(
-    records: readonly ArtifactRecord[],
-  ): Promise<readonly string[]> {
-    const root = await ensureRealDirectory(this.artifactRoot);
-    const ids = new Set(records.map((record) => record.id));
-    const entries = new Map<
-      string,
-      { readonly unlinkPath: string; readonly record: ArtifactRecord }
-    >();
-    const relativePaths = new Map(records.map((record) => [record.relativePath, record] as const));
-    for (const record of records) {
-      validateRelativeArtifactPath(record.relativePath);
-    }
-    const purgeEntries = await this.resolveRemovalEntriesUnlocked(records);
-    for (const [index, record] of records.entries()) {
-      const entry = purgeEntries[index];
-      if (!entry) continue;
-      if (!isInsideOrSamePath(root, dirname(entry.unlinkPath))) {
-        throw new Error(`Artifact ${record.id} resolves outside the artifact root`);
-      }
-      entries.set(entry.comparisonIdentity, { unlinkPath: entry.unlinkPath, record });
-    }
-    const guardRecords = this.records.filter((record) => !ids.has(record.id));
-    for (const record of guardRecords) {
-      const exactTarget = relativePaths.get(record.relativePath);
-      if (exactTarget) {
-        throw new Error(
-          `Artifact ${exactTarget.id} path is still referenced by artifact ${record.id}`,
-        );
-      }
-    }
-    const guardEntries = await this.resolveRemovalEntriesUnlocked(guardRecords);
-    for (const [index, record] of guardRecords.entries()) {
-      const entry = guardEntries[index];
-      const target = entry ? entries.get(entry.comparisonIdentity)?.record : undefined;
-      if (target) {
-        throw new Error(`Artifact ${target.id} path is still referenced by artifact ${record.id}`);
-      }
-    }
-    return [...entries.values()].map((entry) => entry.unlinkPath);
-  }
-
-  // Resolves removal entries with bounded concurrency: each resolution issues
-  // realpath/lstat syscalls, so a serial loop over the full record set turned
-  // session-cleanup purges into a syscall storm on large artifact stores.
-  // Workers capture per-record results and always drain the queue, so all
-  // filesystem work settles before this mutation releases the writer lock,
-  // and resolver failures surface in record order rather than completion
-  // order.
-  private async resolveRemovalEntriesUnlocked(
-    records: readonly ArtifactRecord[],
-  ): Promise<readonly (ArtifactRemovalEntry | undefined)[]> {
-    type Resolution =
-      | { readonly ok: true; readonly entry: ArtifactRemovalEntry | undefined }
-      | { readonly ok: false; readonly error: unknown };
-    const results: (Resolution | undefined)[] = new Array(records.length);
-    let nextIndex = 0;
-    const worker = async () => {
-      while (nextIndex < records.length) {
-        const index = nextIndex++;
-        try {
-          const entry = await resolveArtifactRemovalEntry(
-            this.artifactRoot,
-            records[index]!.relativePath,
-          );
-          results[index] = { ok: true, entry };
-        } catch (error) {
-          results[index] = { ok: false, error };
-        }
-      }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(ARTIFACT_PURGE_RESOLVE_CONCURRENCY, records.length) }, worker),
-    );
-    const resolved: (ArtifactRemovalEntry | undefined)[] = new Array(records.length);
-    for (const [index, result] of results.entries()) {
-      if (result === undefined) throw new Error('Artifact removal resolution did not settle');
-      if (!result.ok) throw result.error;
-      resolved[index] = result.entry;
-    }
-    return resolved;
-  }
-
-  private async completePurgeUnlocked(
-    ids: ReadonlySet<string>,
-    paths: readonly string[],
-  ): Promise<void> {
-    const nextRecords = this.records.filter((record) => !ids.has(record.id));
-    const changedDirectories = new Set<string>();
-    try {
-      for (const path of paths) {
-        await rm(path, { force: true });
-        changedDirectories.add(dirname(path));
-      }
-    } finally {
-      for (const directory of changedDirectories) await syncDirectory(directory);
-    }
-    // Keep the paths discoverable until physical cleanup is durable. Session
-    // retirement already owns the pending cleanup intent and retries on reopen.
-    await this.writeMetadataUnlocked({ deleteIds: [...ids] });
-    this.records = nextRecords;
-  }
-
-  private async prepareReadInSessionUnlocked(
+  private async prepareRead(
     sessionId: string,
     artifactId: string,
     maxBytes: number,
   ): Promise<PreparedArtifactRead | ArtifactReadFailure> {
-    await this.load();
-    const snapshot = this.sessionSnapshot(sessionId);
-    const record = snapshot.records.find((candidate) => candidate.id === artifactId);
-    if (!record) return { ok: false, reason: 'not_found' };
-    return this.prepareRecordRead(record, maxBytes);
+    const record = this.metadata.readInSession(sessionId, artifactId);
+    return record ? this.prepareRecordRead(record, maxBytes) : { ok: false, reason: 'not_found' };
   }
-
   private async prepareRecordRead(
     record: ArtifactRecord,
     maxBytes: number,
   ): Promise<PreparedArtifactRead | ArtifactReadFailure> {
+    let path = this.artifactRoot;
+    for (const component of ['', ...record.relativePath.split('/')]) {
+      path = join(path, component);
+      const entry = await lstat(path).catch(() => undefined);
+      if (!entry) return { ok: false, reason: 'not_found' };
+      if (entry.isSymbolicLink()) return { ok: false, reason: 'not_allowed' };
+    }
     const resolved = await resolveArtifactPath({
       artifactRoot: this.artifactRoot,
       relativePath: record.relativePath,
     });
-    if (!resolved.ok) return { ok: false, reason: resolved.reason };
-    return { ok: true, path: resolved.path, record, maxBytes };
+    return resolved.ok ? { ok: true, path: resolved.path, record, maxBytes } : resolved;
   }
-
-  private async load(): Promise<void> {
-    this.records = this.metadataRepository.readAll();
-  }
-
-  private async writeMetadataUnlocked(changes: ArtifactMetadataChanges): Promise<void> {
-    this.metadataRepository.applyChanges(changes);
-  }
-
-  private async prepareMutationUnlocked(): Promise<void> {
-    await this.reloadForMutationUnlocked();
-  }
-
-  private async reloadForMutationUnlocked(): Promise<void> {
-    this.records = this.metadataRepository.readAll();
-  }
-
-  private bindMutationRoot(canonicalRoot: string): void {
-    if (this.workspaceRoot === canonicalRoot) return;
-    this.workspaceRoot = canonicalRoot;
-    this.artifactRoot = join(canonicalRoot, 'artifacts');
-    this.records = [];
-  }
-
-  /**
-   * Orders one session's records and stamps the revision readers compare on.
-   *
-   * Sealed on the way out rather than kept in a map. A revision hashes every
-   * record in its session, and every reader reloads the whole store from the
-   * database before it reads one, so a kept snapshot never survived to be read
-   * -- sealing all of them on load only charged each reader for the sessions it
-   * did not ask about.
-   */
-  private sessionSnapshot(sessionId: string): ArtifactSessionSnapshot {
-    const records = this.records
-      .filter((record) => record.sessionId === sessionId)
-      .sort(compareArtifactRecords);
-    return { records, revision: artifactListRevision(records) };
-  }
-
-  private enqueueSerialized<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.queue.then(operation, operation);
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      await this.assertAuthority?.();
+      return operation();
+    };
+    const next = this.queue.then(run, run);
     this.queue = next.then(
       () => {},
       () => {},
     );
     return next;
   }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    return this.enqueueSerialized(async () => {
-      await this.assertAuthority?.();
-      return operation();
-    });
-  }
-
-  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
-    return this.enqueueSerialized(() =>
-      this.runWithWriterLock(async () => {
-        await this.assertAuthority?.();
-        return operation();
-      }),
+  private enqueueLocked<T>(operation: () => Promise<T>): Promise<T> {
+    return this.enqueue(() =>
+      this.writerAuthority
+        ? withLeaseBoundArtifactWriterLock(this.writerAuthority, operation)
+        : withArtifactWriterLock(this.workspaceRoot, async (canonicalRoot) => {
+            this.workspaceRoot = canonicalRoot;
+            this.artifactRoot = join(canonicalRoot, 'artifacts');
+            return operation();
+          }),
     );
-  }
-
-  private runWithWriterLock<T>(operation: () => Promise<T>): Promise<T> {
-    const leaseBoundWriterLockAuthority = this.leaseBoundWriterLockAuthority;
-    if (leaseBoundWriterLockAuthority) {
-      return withLeaseBoundArtifactWriterLock(leaseBoundWriterLockAuthority, operation);
-    }
-    return withArtifactWriterLock(this.workspaceRoot, async (canonicalRoot) => {
-      this.bindMutationRoot(canonicalRoot);
-      return operation();
-    });
   }
 }
 
+function snapshotBinding(input: Omit<CreateArtifactInput, 'content'>, artifactId: string) {
+  return input.taskOutputSnapshotOf
+    ? [{ sessionId: input.sessionId, shellRunId: input.taskOutputSnapshotOf, artifactId }]
+    : [];
+}
 function prepareArtifactDraft(input: Omit<CreateArtifactInput, 'content'>): ArtifactRecordDraft {
   const id = input.id ?? randomUUID();
-  if (!ARTIFACT_KIND_SET.has(input.kind)) throw new Error('Invalid Artifact kind');
-  if (!ARTIFACT_SOURCE_SET.has(input.source)) throw new Error('Invalid Artifact source');
-  if (input.deepResearchRole !== undefined && !isDeepResearchArtifactRole(input.deepResearchRole)) {
+  if (!(ARTIFACT_KINDS as readonly string[]).includes(input.kind))
+    throw new Error('Invalid Artifact kind');
+  if (!(ARTIFACT_SOURCES as readonly string[]).includes(input.source))
+    throw new Error('Invalid Artifact source');
+  if (input.deepResearchRole !== undefined && !isDeepResearchArtifactRole(input.deepResearchRole))
     throw new Error('Invalid Artifact deep-research role');
-  }
-  if (input.now !== undefined && (!Number.isSafeInteger(input.now) || input.now < 0)) {
+  if (input.now !== undefined && (!Number.isSafeInteger(input.now) || input.now < 0))
     throw new Error('Invalid Artifact creation time');
-  }
-  assertCanonicalArtifactEntityId(id, 'id');
-  assertCanonicalArtifactEntityId(input.sessionId, 'sessionId');
-  assertArtifactTurnKey(input.turnId);
-  const name = sanitizeArtifactName(input.name);
-  const relativePath = `${input.sessionId}/${id}-${name}`;
-  validateRelativeArtifactPath(relativePath);
+  assertEntityId(id, 'id');
+  assertEntityId(input.sessionId, 'sessionId');
+  assertTurnKey(input.turnId);
+  if (input.taskOutputSnapshotOf !== undefined)
+    assertEntityId(input.taskOutputSnapshotOf, 'shellRunId');
   return {
     id,
     sessionId: input.sessionId,
     turnId: input.turnId,
     createdAt: input.now ?? Date.now(),
-    name,
+    name: sanitizeArtifactName(input.name),
     kind: input.kind,
-    relativePath,
-    ...(input.mimeType ? { mimeType: input.mimeType } : {}),
     source: input.source,
+    ...(input.mimeType ? { mimeType: input.mimeType } : {}),
     ...(input.summary ? { summary: input.summary } : {}),
     ...(input.deepResearchRole ? { deepResearchRole: input.deepResearchRole } : {}),
   };
 }
-
 async function openRealTarget(path: string) {
-  const noFollowFlags = fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW;
-  try {
-    return await open(path, noFollowFlags);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (process.platform !== 'win32' || (code !== 'EINVAL' && code !== 'ENOTSUP')) throw error;
-    return open(path, fsConstants.O_RDONLY);
-  }
+  return open(
+    path,
+    fsConstants.O_RDONLY |
+      (process.platform === 'win32' ? 0 : fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK),
+  );
 }
-
 async function readPreparedBytes(
   prepared: PreparedArtifactRead,
 ): Promise<{ readonly ok: true; readonly bytes: Buffer } | ArtifactReadFailure> {
   let handle;
   try {
     handle = await openRealTarget(prepared.path);
-    const payloadStat = await handle.stat();
-    if (!payloadStat.isFile()) return { ok: false, reason: 'not_found' };
-    if (payloadStat.size > prepared.maxBytes) return { ok: false, reason: 'too_large' };
-
-    const bytes = Buffer.alloc(payloadStat.size + 1);
+    const meta = await handle.stat();
+    if (!meta.isFile()) return { ok: false, reason: 'not_found' };
+    if (meta.size > prepared.maxBytes) return { ok: false, reason: 'too_large' };
+    if (meta.size !== prepared.record.sizeBytes) return { ok: false, reason: 'read_failed' };
+    const bytes = Buffer.alloc(meta.size + 1);
     let total = 0;
-    while (total < bytes.byteLength) {
-      const read = await handle.read(bytes, total, bytes.byteLength - total, total);
-      if (read.bytesRead === 0) break;
+    while (total < bytes.length) {
+      const read = await handle.read(bytes, total, bytes.length - total, total);
+      if (!read.bytesRead) break;
       total += read.bytesRead;
     }
-    if (total !== payloadStat.size || total > prepared.maxBytes) {
-      return { ok: false, reason: total > prepared.maxBytes ? 'too_large' : 'read_failed' };
-    }
-    return { ok: true, bytes: bytes.subarray(0, total) };
+    return total === meta.size
+      ? { ok: true, bytes: bytes.subarray(0, total) }
+      : { ok: false, reason: 'read_failed' };
   } catch {
     return { ok: false, reason: 'read_failed' };
   } finally {
     await handle?.close();
   }
 }
-
 async function readPreparedChunk(
   prepared: PreparedArtifactRead,
   offset: number,
@@ -1123,25 +833,26 @@ async function readPreparedChunk(
   let handle;
   try {
     handle = await openRealTarget(prepared.path);
-    const payloadStat = await handle.stat();
-    if (!payloadStat.isFile()) return { ok: false, reason: 'not_found' };
-    if (offset > payloadStat.size) return { ok: false, reason: 'out_of_range' };
-    const expected = Math.min(maxBytes, payloadStat.size - offset);
+    const meta = await handle.stat();
+    if (!meta.isFile()) return { ok: false, reason: 'not_found' };
+    if (meta.size !== prepared.record.sizeBytes) return { ok: false, reason: 'read_failed' };
+    if (offset > meta.size) return { ok: false, reason: 'out_of_range' };
+    const expected = Math.min(maxBytes, meta.size - offset);
     const bytes = Buffer.alloc(expected);
     let total = 0;
     while (total < expected) {
       const read = await handle.read(bytes, total, expected - total, offset + total);
-      if (read.bytesRead === 0) break;
+      if (!read.bytesRead) break;
       total += read.bytesRead;
     }
     if (total !== expected) return { ok: false, reason: 'read_failed' };
-    const nextOffset = offset + total;
+    const next = offset + total;
     return {
       ok: true,
       bytes,
       offset,
-      totalBytes: payloadStat.size,
-      nextOffset: nextOffset < payloadStat.size ? nextOffset : null,
+      totalBytes: meta.size,
+      nextOffset: next < meta.size ? next : null,
     };
   } catch {
     return { ok: false, reason: 'read_failed' };
@@ -1149,61 +860,16 @@ async function readPreparedChunk(
     await handle?.close();
   }
 }
-
-function artifactReplayConflict(artifactId: string): Error {
-  return new Error(`Artifact ${artifactId} already exists with different metadata or content`);
+function artifactReplayConflict(id: string): Error {
+  return new Error(`Artifact ${id} already exists with different metadata or content`);
 }
-
-function conversationCopyArtifactId(
-  sourceSessionId: string,
-  targetSessionId: string,
-  sourceArtifactId: string,
-): string {
-  return `copy_${createHash('sha256')
-    .update(JSON.stringify([sourceSessionId, targetSessionId, sourceArtifactId]))
-    .digest('hex')}`;
-}
-
-function optionalCanonicalText(value: string | undefined): string | undefined {
-  return value ? value : undefined;
-}
-
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
-
-function artifactListRevision(records: readonly ArtifactRecord[]): ArtifactListRevision {
-  return `sha256:${createHash('sha256').update(JSON.stringify(records)).digest('hex')}`;
-}
-
-function compareArtifactRecords(a: ArtifactRecord, b: ArtifactRecord): number {
-  const timestampDelta = b.createdAt - a.createdAt;
-  return timestampDelta !== 0 ? timestampDelta : a.id.localeCompare(b.id);
-}
-
-function sameArtifactRecord(a: ArtifactRecord, b: ArtifactRecord): boolean {
-  return (
-    a.id === b.id &&
-    a.sessionId === b.sessionId &&
-    a.turnId === b.turnId &&
-    a.createdAt === b.createdAt &&
-    a.name === b.name &&
-    a.kind === b.kind &&
-    a.relativePath === b.relativePath &&
-    a.sizeBytes === b.sizeBytes &&
-    a.mimeType === b.mimeType &&
-    a.source === b.source &&
-    a.summary === b.summary &&
-    a.deepResearchRole === b.deepResearchRole
-  );
-}
-
 function assertPageBound(value: number, allowZero: boolean, label: string): void {
-  if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) {
+  if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1))
     throw new Error(`Artifact page ${label} is invalid`);
-  }
 }
-
 export async function resolveArtifactPath(input: {
   artifactRoot: string;
   relativePath: string;
@@ -1211,19 +877,16 @@ export async function resolveArtifactPath(input: {
   { ok: true; path: string } | { ok: false; reason: 'not_found' | 'not_allowed' | 'read_failed' }
 > {
   if (!isSafeRelativeArtifactPath(input.relativePath)) return { ok: false, reason: 'not_allowed' };
-  const target = join(input.artifactRoot, input.relativePath);
-  let root: string;
-  let resolvedTarget: string;
   try {
-    root = await ensureRealDirectory(input.artifactRoot);
-    resolvedTarget = await realpath(target);
+    const root = await realpath(input.artifactRoot);
+    const target = await realpath(join(root, input.relativePath));
+    return isInside(root, target)
+      ? { ok: true, path: target }
+      : { ok: false, reason: 'not_allowed' };
   } catch {
     return { ok: false, reason: 'not_found' };
   }
-  if (!isInsideOrSamePath(root, resolvedTarget)) return { ok: false, reason: 'not_allowed' };
-  return { ok: true, path: resolvedTarget };
 }
-
 export function sanitizeArtifactName(name: string): string {
   const cleaned = name
     .trim()
@@ -1231,146 +894,38 @@ export function sanitizeArtifactName(name: string): string {
     .replace(/\s+/g, ' ')
     .replace(/^[ .-]+/, '')
     .replace(/[ .-]+$/, '');
-  const truncated = truncateWithoutSplittingSurrogate(cleaned, 120).replace(/[ .-]+$/, '');
-  return truncated || 'artifact';
-}
-
-function truncateWithoutSplittingSurrogate(value: string, maxCodeUnits: number): string {
-  const truncated = value.slice(0, maxCodeUnits);
+  let truncated = cleaned.slice(0, 120);
   const last = truncated.charCodeAt(truncated.length - 1);
-  return last >= 0xd800 && last <= 0xdbff ? truncated.slice(0, -1) : truncated;
+  if (last >= 0xd800 && last <= 0xdbff) truncated = truncated.slice(0, -1);
+  return truncated.replace(/[ .-]+$/, '') || 'artifact';
 }
-
-async function removeFileDurably(path: string, directory: string): Promise<boolean> {
-  try {
-    await unlink(path);
-  } catch (error) {
-    if (isNotFound(error)) return false;
-    throw error;
-  }
-  await syncDirectory(directory);
-  return true;
+function assertEntityId(value: string, label: string): void {
+  if (!isCanonicalArtifactEntityId(value))
+    throw new Error(`Artifact ${label} must be a canonical entity ID`);
 }
-
-function assertCanonicalArtifactEntityId(
-  value: unknown,
-  field: 'id' | 'sessionId',
-): asserts value is string {
-  if (!isCanonicalArtifactEntityId(value)) {
-    throw new Error(
-      `Artifact ${field} must be a canonical entity ID of 1-${ARTIFACT_ENTITY_ID_MAX_CHARS} ASCII letters, digits, "_" or "-"`,
-    );
-  }
-}
-
-function assertArtifactTurnKey(value: unknown): asserts value is string {
-  if (!isArtifactTurnKey(value)) {
+function assertTurnKey(value: string): void {
+  if (!isArtifactTurnKey(value))
     throw new Error('Artifact turnId must be a bounded opaque turn key without control characters');
-  }
 }
-
-const ARTIFACT_KIND_SET = new Set<ArtifactKind>(ARTIFACT_KINDS);
-const ARTIFACT_SOURCE_SET = new Set<ArtifactSource>(ARTIFACT_SOURCES);
-
-async function assertArtifactDirectory(artifactRoot: string, directory: string): Promise<void> {
-  const root = await ensureRealDirectory(artifactRoot);
-  const resolvedDirectory = await realpath(directory);
-  if (!isInsideOrSamePath(root, resolvedDirectory)) {
-    throw new Error('Artifact target directory resolves outside the artifact root');
-  }
-}
-
 async function ensureRealDirectory(path: string): Promise<string> {
+  const entry = await lstat(path);
+  if (!entry.isDirectory() || entry.isSymbolicLink())
+    throw new Error('Artifact root must be a real directory');
   await access(path, fsConstants.R_OK);
   return realpath(path);
 }
-
-async function resolveArtifactRemovalEntry(
-  artifactRoot: string,
-  relativePath: string,
-): Promise<ArtifactRemovalEntry | undefined> {
-  const target = join(artifactRoot, relativePath);
-  try {
-    const parent = await realpath(dirname(target));
-    const entry = join(parent, basename(target));
-    const entryStat = await lstat(entry, { bigint: true }).catch((error) => {
-      if (isNotFound(error)) return undefined;
-      throw error;
-    });
-    // A previous attempt may have unlinked the file but failed to sync its
-    // parent. Retain that parent in the next purge's durability barrier.
-    if (!entryStat) return { unlinkPath: entry, comparisonIdentity: `path:${entry}` };
-    if (entryStat.isSymbolicLink()) {
-      return {
-        unlinkPath: entry,
-        comparisonIdentity: symlinkEntryIdentity(entryStat),
-      };
-    }
-    const resolvedEntry = await realpath(entry);
-    return {
-      unlinkPath: resolvedEntry,
-      comparisonIdentity: `path:${resolvedEntry}`,
-    };
-  } catch (error) {
-    if (isNotFound(error)) return undefined;
-    throw error;
-  }
-}
-
-function symlinkEntryIdentity(entryStat: BigIntStats): string {
-  if (entryStat.dev !== 0n || entryStat.ino !== 0n) {
-    return `symlink:${entryStat.dev}:${entryStat.ino}`;
-  }
-  return [
-    'symlink-stat',
-    entryStat.mode,
-    entryStat.size,
-    entryStat.birthtimeNs,
-    entryStat.ctimeNs,
-    entryStat.mtimeNs,
-  ].join(':');
-}
-
-function artifactIdsFromUpgradeOrphanPath(relativePath: string): readonly string[] {
-  const name = basename(relativePath);
-  const artifactIds: string[] = [];
-  for (
-    let separator = name.indexOf('-');
-    separator > 0;
-    separator = name.indexOf('-', separator + 1)
-  ) {
-    const artifactId = name.slice(0, separator);
-    if (isCanonicalArtifactEntityId(artifactId)) artifactIds.push(artifactId);
-  }
-  return artifactIds;
-}
-
-function isInsideOrSamePath(root: string, target: string): boolean {
-  if (target === root) return true;
+function isInside(root: string, target: string): boolean {
   const rel = relative(root, target);
-  return (
-    rel !== '' &&
-    !rel.startsWith('..') &&
-    rel !== '..' &&
-    !rel.includes(`..${sep}`) &&
-    !rel.startsWith(sep)
-  );
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !rel.startsWith(sep);
 }
-
 function isNotFound(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
-
 function sniffAllowedBinaryMime(bytes: Uint8Array): string | null {
-  // Core owns the binary signatures, shared with the attachment and image-read
-  // paths so the three cannot drift. SVG needs a wider text scan than a fixed
-  // prefix, so it stays local to this reader.
   const sniffed = sniffAttachmentMimeType(bytes);
   if (sniffed) return sniffed;
-  const leading = new TextDecoder('utf-8', { fatal: false })
-    .decode(bytes.slice(0, Math.min(bytes.length, 512)))
-    .trimStart();
-  if (/^<svg[\s>]/i.test(leading) || /^<\?xml[\s\S]*<svg[\s>]/i.test(leading))
-    return 'image/svg+xml';
-  return null;
+  const leading = new TextDecoder().decode(bytes.slice(0, 512)).trimStart();
+  return /^<svg[\s>]/i.test(leading) || /^<\?xml[\s\S]*<svg[\s>]/i.test(leading)
+    ? 'image/svg+xml'
+    : null;
 }

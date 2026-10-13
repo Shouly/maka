@@ -18,224 +18,53 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
-import { registerToolResultFileIpc } from '../tool-result-file-ipc-main.js';
+import { registerToolResultFileIpc, type RevealToolResultFileResult } from '../tool-result-file-ipc-main.js';
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
-
-const SESSION = 'session-a';
-const OTHER_SESSION = 'session-b';
-const RUN = 'run-1.txt';
-
-interface Fixture {
-  base: string;
-  root: string;
-  folder: string;
-  saved: string;
-  reveal(sessionId: unknown, path: unknown, options?: RevealOptions): Promise<unknown>;
-  /** Every call that reached the fake shell, by method. */
-  calls: { method: string; path: string }[];
-}
-
-interface RevealOptions {
-  allowLocalPaths?: boolean;
-  stateRoot?: string;
-  showItemInFolder?: (path: string) => void;
-}
-
-/**
- * A real state root in a temp folder, its saved-results folder holding this
- * Session's folder with one saved run and another Session's folder with its
- * own, and a file outside it. The shell is a fake that records every call,
- * `openPath` included, so a test can tell that nothing was ever opened.
- */
-async function withRoot(run: (fixture: Fixture) => Promise<void>): Promise<void> {
-  const base = await mkdtemp(join(tmpdir(), 'maka-tool-result-reveal-'));
-  try {
-    const root = join(base, 'tool-results');
-    const folder = join(root, SESSION);
-    await mkdir(folder, { recursive: true });
-    await mkdir(join(root, OTHER_SESSION), { recursive: true });
-    const saved = join(folder, RUN);
-    await writeFile(saved, 'the whole output');
-    await writeFile(join(root, OTHER_SESSION, RUN), 'another session');
-    await writeFile(join(base, RUN), 'outside the root');
-    const calls: Fixture['calls'] = [];
-    const reveal = async (sessionId: unknown, path: unknown, options: RevealOptions = {}) => {
-      const handlers = new Map<string, Handler>();
-      const shell = {
-        showItemInFolder(target: string) {
-          calls.push({ method: 'showItemInFolder', path: target });
-          options.showItemInFolder?.(target);
-        },
-        openPath(target: string) {
-          calls.push({ method: 'openPath', path: target });
-          return Promise.resolve('');
-        },
-      };
-      registerToolResultFileIpc({
-        ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as Handler) },
-        shell,
-        allowLocalPaths: options.allowLocalPaths ?? true,
-        stateRoot: options.stateRoot ?? base,
-      });
-      assert.equal(handlers.has('app:openToolResultFile'), false, 'there is no open channel');
-      const handler = handlers.get('app:revealToolResultFile');
-      assert.ok(handler, 'the channel is registered');
-      return handler({}, sessionId, path);
-    };
-    await run({ base, root, folder, saved, reveal, calls });
-  } finally {
-    await rm(base, { recursive: true, force: true });
-  }
-}
-
+const REF = 'maka://runtime/attachments/stable-output';
 const NOT_ALLOWED = { ok: false, reason: 'not-allowed' };
-
-test('a saved tool result is revealed at the path main builds, never opened', async () => {
-  await withRoot(async ({ saved, folder, reveal, calls }) => {
-    assert.deepEqual(await reveal(SESSION, saved), { ok: true });
-    assert.deepEqual(await reveal(SESSION, `${folder}/./${RUN}`), { ok: true }, 'the same path');
-    // The temp folder sits under a symlink on macOS: the path main built is
-    // what is shown, not the realpath of what is on disk.
-    assert.deepEqual(calls, [
-      { method: 'showItemInFolder', path: saved },
-      { method: 'showItemInFolder', path: saved },
-    ]);
+function fixture(result: RevealToolResultFileResult = { ok: true }) {
+  const handlers = new Map<string, Handler>();
+  const calls: Array<{ sessionId: string; artifactId: string }> = [];
+  registerToolResultFileIpc({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as Handler) },
+    revealArtifact: async (sessionId, artifactId) => { calls.push({ sessionId, artifactId }); return result; },
   });
+  assert.equal(handlers.has('app:openToolResultFile'), false, 'revealing must never execute a file');
+  return { calls, reveal: (sessionId: unknown, ref: unknown) => handlers.get('app:revealToolResultFile')!({}, sessionId, ref) };
+}
+
+test('saved output always uses Session-authorized Host materialization, locally or remotely', async () => {
+  const { calls, reveal } = fixture();
+  assert.deepEqual(await reveal('session-a', REF), { ok: true });
+  assert.deepEqual(calls, [{ sessionId: 'session-a', artifactId: 'stable-output' }]);
 });
 
-test('a path that is not the one main builds for that Session is refused', async () => {
-  await withRoot(async ({ base, root, folder, saved, reveal, calls }) => {
-    assert.deepEqual(
-      await reveal(SESSION, join(root, OTHER_SESSION, RUN)),
-      NOT_ALLOWED,
-      "another Session's folder",
-    );
-    assert.deepEqual(
-      await reveal(SESSION, `${folder}/../${OTHER_SESSION}/${RUN}`),
-      NOT_ALLOWED,
-      'a `..` climb into another Session',
-    );
-    assert.deepEqual(
-      await reveal(SESSION, `${folder}/../../${RUN}`),
-      NOT_ALLOWED,
-      'a `..` climb out of the root',
-    );
-    assert.deepEqual(await reveal(SESSION, join(base, RUN)), NOT_ALLOWED, 'outside the root');
-    assert.deepEqual(await reveal(SESSION, RUN), NOT_ALLOWED, 'a relative path');
-    assert.deepEqual(await reveal(SESSION, join(folder, 'nested', RUN)), NOT_ALLOWED, 'a subfolder');
-    assert.deepEqual(
-      await reveal(SESSION, saved, { stateRoot: join(base, 'other-root') }),
-      NOT_ALLOWED,
-      'a different state root',
-    );
-    assert.deepEqual(
-      await reveal(SESSION, join(tmpdir(), 'maka', 'tool-results', SESSION, RUN)),
-      NOT_ALLOWED,
-      'where a saved result used to be kept',
-    );
-    assert.deepEqual(calls, []);
-  });
+test('renderer filesystem paths are never opened, resolved, or revealed', async () => {
+  const { calls, reveal } = fixture();
+  for (const ref of ['/tmp/tool-results/session-a/output.txt', 'C:\\state\\output.txt', '../output.txt', 'file:///tmp/output.txt', 'output.txt', '', undefined, 42]) {
+    assert.deepEqual(await reveal('session-a', ref), NOT_ALLOWED, String(ref));
+  }
+  assert.deepEqual(calls, []);
 });
 
-test('a file name that is not a saved run is refused, even inside the folder', async () => {
-  await withRoot(async ({ folder, reveal, calls }) => {
-    for (const name of ['x.command', 'y.terminal', 'a.txt.app', 'run.TXT', '.txt', 'a b.txt', 'run.txt.']) {
-      await writeFile(join(folder, name), 'echo written by the command');
-      assert.deepEqual(await reveal(SESSION, join(folder, name)), NOT_ALLOWED, name);
-    }
-    assert.deepEqual(await reveal(SESSION, `${join(folder, 'x'.repeat(129))}.txt`), NOT_ALLOWED);
-    assert.deepEqual(calls, []);
-  });
+test('invalid or non-file resource refs are refused before invoking the Host', async () => {
+  const { calls, reveal } = fixture();
+  for (const ref of [REF + '?path=/tmp/a', REF + '#fragment', REF + '/nested', 'maka://runtime/attachments/../secret', 'maka://runtime/attachments/%2fsecret', 'maka://runtime/task-outputs/live-task', 'maka://other/attachments/id']) {
+    assert.deepEqual(await reveal('session-a', ref), NOT_ALLOWED, ref);
+  }
+  assert.deepEqual(calls, []);
 });
 
-test('a saved run replaced by a symlink is refused, wherever it points', async () => {
-  await withRoot(async ({ base, folder, reveal, calls }) => {
-    const inside = join(folder, 'run-2.txt');
-    await writeFile(join(folder, 'other.txt'), 'inside the folder');
-    await symlink(join(folder, 'other.txt'), inside);
-    assert.deepEqual(await reveal(SESSION, inside), NOT_ALLOWED, 'a link to a file inside');
-    const outside = join(folder, 'run-3.txt');
-    await writeFile(join(base, 'x.command'), '#!/bin/sh\necho escaped');
-    await symlink(join(base, 'x.command'), outside);
-    assert.deepEqual(await reveal(SESSION, outside), NOT_ALLOWED, 'a link to a file outside');
-    const dangling = join(folder, 'run-4.txt');
-    await symlink(join(base, 'gone.command'), dangling);
-    assert.deepEqual(await reveal(SESSION, dangling), NOT_ALLOWED, 'a link to nothing');
-    assert.deepEqual(calls, []);
-  });
+test('invalid Session identities cannot reach file materialization', async () => {
+  const { calls, reveal } = fixture();
+  for (const sessionId of [undefined, 42, '', '..', '../session-a', 'a b']) assert.deepEqual(await reveal(sessionId, REF), NOT_ALLOWED);
+  assert.deepEqual(calls, []);
 });
 
-test('a Session folder that is a symlink is refused', async () => {
-  await withRoot(async ({ base, root, reveal, calls }) => {
-    const elsewhere = join(base, 'elsewhere');
-    await mkdir(elsewhere);
-    await writeFile(join(elsewhere, RUN), 'not a saved result');
-    await symlink(elsewhere, join(root, 'session-link'));
-    assert.deepEqual(await reveal('session-link', join(root, 'session-link', RUN)), NOT_ALLOWED);
-    // Pointing at another Session's real folder is no better.
-    await symlink(join(root, OTHER_SESSION), join(root, 'session-alias'));
-    assert.deepEqual(await reveal('session-alias', join(root, 'session-alias', RUN)), NOT_ALLOWED);
-    assert.deepEqual(calls, []);
-  });
-});
-
-test('a Session id that is not one is refused, so it never names a folder', async () => {
-  await withRoot(async ({ saved, reveal, calls }) => {
-    for (const sessionId of ['', '..', `${SESSION}/..`, '../session-a', 'a b', 42, undefined]) {
-      assert.deepEqual(await reveal(sessionId, saved), NOT_ALLOWED, String(sessionId));
-    }
-    assert.deepEqual(await reveal(SESSION, 42), NOT_ALLOWED);
-    assert.deepEqual(await reveal(SESSION, undefined), NOT_ALLOWED);
-    assert.deepEqual(calls, []);
-  });
-});
-
-test('a missing saved run, or a folder in its place, is refused with its own reason', async () => {
-  await withRoot(async ({ root, folder, reveal, calls }) => {
-    assert.deepEqual(await reveal(SESSION, join(folder, 'cleared.txt')), {
-      ok: false,
-      reason: 'missing',
-    });
-    assert.deepEqual(
-      await reveal('session-gone', join(root, 'session-gone', RUN)),
-      { ok: false, reason: 'missing' },
-      'a Session whose folder was purged',
-    );
-    await mkdir(join(folder, 'run-5.txt'));
-    assert.deepEqual(await reveal(SESSION, join(folder, 'run-5.txt')), {
-      ok: false,
-      reason: 'not-a-file',
-    });
-    assert.deepEqual(calls, []);
-  });
-});
-
-test('a saved tool result is not revealed for a Host on another machine', async () => {
-  await withRoot(async ({ saved, reveal, calls }) => {
-    assert.deepEqual(await reveal(SESSION, saved, { allowLocalPaths: false }), NOT_ALLOWED);
-    assert.deepEqual(calls, []);
-  });
-});
-
-test('a file manager that fails to reveal the saved tool result is reported', async () => {
-  await withRoot(async ({ saved, reveal, calls }) => {
-    assert.deepEqual(
-      await reveal(SESSION, saved, {
-        showItemInFolder: () => {
-          throw new Error('file manager unavailable');
-        },
-      }),
-      { ok: false, reason: 'open-failed' },
-    );
-    assert.deepEqual(
-      calls.map((call) => call.method),
-      ['showItemInFolder'],
-      'and nothing falls back to opening it',
-    );
-  });
+for (const reason of ['missing', 'open-failed'] as const) test(`Host ${reason} is preserved with no local-path fallback`, async () => {
+  const { calls, reveal } = fixture({ ok: false, reason });
+  assert.deepEqual(await reveal('session-a', REF), { ok: false, reason });
+  assert.equal(calls.length, 1);
 });

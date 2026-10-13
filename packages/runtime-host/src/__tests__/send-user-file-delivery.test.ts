@@ -19,16 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  realpath,
-  rm,
-  symlink,
-  truncate,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
@@ -157,14 +148,10 @@ test('Full Access delivers outside files and same basenames in exact input order
     });
     assert.equal(copied.artifactIds.size, 2);
     await store.purgeSessionArtifacts('delivery');
-    const independent = await store.readChunkInSession(
-      'copy',
-      copied.artifactIds.get(delivered.files[0]!.artifactId)!,
-      {
-        offset: 0,
-        maxBytes: binary.length,
-      },
-    );
+    const independent = await store.readChunkInSession('copy', delivered.files[0]!.artifactId, {
+      offset: 0,
+      maxBytes: binary.length,
+    });
     assert.ok(independent.ok);
     assert.deepEqual(Buffer.from(independent.bytes), binary);
     assert.equal(drains(), 0);

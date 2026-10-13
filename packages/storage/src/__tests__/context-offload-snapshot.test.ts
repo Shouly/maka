@@ -28,7 +28,6 @@ import { createSessionStore } from '../session-store.js';
 import { createSqliteRuntimeStore } from '../sqlite-runtime-store.js';
 import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '../root-authority.js';
 import { openInteractiveContextOffloadStoreForWrite } from '../context-offload-store.js';
-import { createReadImageSnapshotStore } from '../read-image-snapshot-store.js';
 import { SqliteContextOffloadStore } from '../sqlite-context-offload-store.js';
 import {
   createOperationalStateBackup,
@@ -74,13 +73,26 @@ async function fixture(t: TestContext) {
     permissionMode: 'ask',
   });
   const writer = await openInteractiveContextOffloadStoreForWrite(owner.lease, { limits });
+  const snapshot = async (
+    sessionId: string,
+    input: { ownerId: string; bytes: Uint8Array; mimeType: string },
+  ) => {
+    const stored = await writer.put({
+      sessionId,
+      owner: { kind: 'read_image_snapshot', ownerId: input.ownerId },
+      bytes: input.bytes,
+      mediaType: input.mimeType,
+    });
+    assert.ok(stored.ok);
+    return { kind: 'session_context' as const, sessionId, refId: stored.record.refId };
+  };
   const bytes = Buffer.from('snapshot bytes that cannot be recovered from the changed workspace');
-  const ref = await createReadImageSnapshotStore(writer, selected.id).snapshot({
+  const ref = await snapshot(selected.id, {
     ownerId: 'image-1',
     bytes,
     mimeType: 'image/png',
   });
-  await createReadImageSnapshotStore(writer, other.id).snapshot({
+  await snapshot(other.id, {
     ownerId: 'shared',
     bytes,
     mimeType: 'image/png',
@@ -97,12 +109,12 @@ async function fixture(t: TestContext) {
   if (!inlineStored.ok) throw new Error('inline fixture value was not stored');
   const inlineRef = inlineStored.record;
   await rewriteAsUpgradedInlineBlob(root, inlinePrivate);
-  const otherRef = await createReadImageSnapshotStore(writer, other.id).snapshot({
+  const otherRef = await snapshot(other.id, {
     ownerId: 'private',
     bytes: privateBytes,
     mimeType: 'image/png',
   });
-  const orphan = await createReadImageSnapshotStore(writer, selected.id).snapshot({
+  const orphan = await snapshot(selected.id, {
     ownerId: 'orphan',
     bytes: Buffer.from('orphan bytes'),
     mimeType: 'image/png',

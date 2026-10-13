@@ -17,15 +17,8 @@
  * under the License.
  */
 
-// Grep and Glob, in the reference design's `list` panel: one row per hit,
-// nothing between the reader and the next path.
-//
-// These two used to land on the JSON renderer, which showed the same
-// information as a pretty-printed object — correct, and useless, because the
-// one thing a reader wants from a search result is to OPEN one of the hits,
-// and no part of a `<pre>` is clickable. A list row is: the path is the
-// button, the line and the matching text follow it, and the trailing meta
-// carries the count.
+// Grep and Glob use a list panel with one row per hit. Grep rows display
+// search output; Glob rows can open their explicit file paths.
 //
 // The cap is stated, never hidden. ripgrep's own limit and the tool's
 // `head_limit` both cut the list, and a list that silently ends looks like a
@@ -53,14 +46,9 @@ function OmittedRow(props: { count: number }) {
   );
 }
 
-export const GrepResult = memo(function GrepResult(props: {
-  result: GrepResultShape;
-  /** Opens the hit's file in the right pane's Files face. */
-  onOpenFile?: (path: string | undefined) => void;
-}) {
+export const GrepResult = memo(function GrepResult(props: { result: GrepResultShape }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).search;
-  const onOpenFile = props.onOpenFile;
   if (props.result.matches.length === 0) {
     return (
       <ToolResultPanel variant="list">
@@ -79,14 +67,9 @@ export const GrepResult = memo(function GrepResult(props: {
             key={`${match}-${index}`}
             icon={<Anthropicon name="file" size={12} />}
             title={match}
-            {...(onOpenFile
-              ? { ariaLabel: copy.openPath(row.path), onClick: () => onOpenFile(row.path) }
-              : {})}
             {...(row.count !== undefined ? { meta: copy.occurrences(row.count) } : {})}
           >
-            {/* The path reads as the link and the match as its context, which
-                is the split a reader scans by — one column of paths down the
-                left, the text beside it. */}
+            {/* Keep the path, line number and matching text together for scanning. */}
             <span className="font-mono" data-maka-search-row={row.path}>
               {row.path}
               {row.line !== undefined && <span className="text-text-muted">{`:${row.line}`}</span>}

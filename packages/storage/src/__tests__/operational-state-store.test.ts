@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -28,7 +28,7 @@ import {
   acquireOperationalStateDatabase,
   OperationalStateMigrationBlockedError,
 } from '../operational-state-store.js';
-import { SQLITE_ARTIFACT_SCHEMA_VERSION } from '../sqlite-artifact-schema.js';
+import { installCurrentArtifactFixture } from './fixtures/current-artifact-scope.js';
 import { SQLITE_RUNTIME_SCHEMA_VERSION } from '../sqlite-runtime-schema.js';
 import { SQLITE_SESSION_METADATA_SCHEMA_VERSION } from '../sqlite-session-metadata-schema.js';
 import { SQLITE_USAGE_SCHEMA_VERSION } from '../sqlite-usage-schema.js';
@@ -167,7 +167,7 @@ test('a non-owner rejects an older schema without migrating it behind the Runtim
   }
 });
 
-test('preserves live supported v1 Artifacts when opening existing Sessions', async () => {
+test('rejects v1 Artifacts without changing existing Sessions or resource rows', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-operational-artifact-v1-retirement-'));
   const databasePath = join(root, 'runtime.sqlite');
   try {
@@ -206,36 +206,131 @@ test('preserves live supported v1 Artifacts when opening existing Sessions', asy
     `);
     legacy.close();
 
-    const reopened = acquireOperationalStateDatabase(root);
-    assert.equal(
-      (
-        reopened.database
-          .prepare("SELECT COUNT(*) AS count FROM session_metadata WHERE session_id = 'session-1'")
-          .get() as { count: number }
-      ).count,
-      1,
+    assert.throws(
+      () => acquireOperationalStateDatabase(root),
+      /Unsupported Artifact storage format/,
     );
-    assert.equal(
-      (
-        reopened.database.prepare('SELECT COUNT(*) AS count FROM artifact_records').get() as {
-          count: number;
-        }
-      ).count,
-      1,
-    );
-    assert.equal(
-      (
-        reopened.database
+    const preserved = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      assert.equal(
+        preserved
+          .prepare("SELECT COUNT(*) AS n FROM session_metadata WHERE session_id = 'session-1'")
+          .get()?.n,
+        1,
+      );
+      assert.equal(preserved.prepare('SELECT COUNT(*) AS n FROM artifact_records').get()?.n, 1);
+      assert.equal(
+        preserved
           .prepare("SELECT version FROM operational_schema_migrations WHERE scope = 'artifact'")
-          .get() as { version: number }
-      ).version,
-      SQLITE_ARTIFACT_SCHEMA_VERSION,
-    );
-    reopened.close();
+          .get()?.version,
+        1,
+      );
+    } finally {
+      preserved.close();
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('rejects resource v6 without inventing historical hand-back receipts or changing data', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'maka-operational-artifact-v6-'));
+  const databasePath = join(root, 'runtime.sqlite');
+  try {
+    const lease = acquireOperationalStateDatabase(root);
+    const metadata = createSqliteSessionMetadataStore(databasePath, { databaseLease: lease });
+    await metadata.create(sessionHeader());
+    lease.database.exec(`DROP TABLE artifact_handoffs;
+      UPDATE operational_schema_migrations SET version = 6 WHERE scope = 'artifact'`);
+    metadata.close();
+    const before = await readFile(databasePath);
+    assert.throws(
+      () => acquireOperationalStateDatabase(root),
+      /Unsupported Artifact storage format/,
+    );
+    assert.deepEqual(await readFile(databasePath), before);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+for (const version of [3, 4, 5]) {
+  test(`rejects pre-resource v${version} Artifacts without modifying identity, metadata, or schema`, async () => {
+    const root = await mkdtemp(join(tmpdir(), `maka-operational-artifact-v${version}-`));
+    const databasePath = join(root, 'runtime.sqlite');
+    const record = {
+      id: 'legacy-file',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      createdAt: 1,
+      name: 'report.txt',
+      kind: 'file',
+      sizeBytes: 4,
+      relativePath: 'session-1/legacy-file-report.txt',
+      source: 'user_delivery',
+      ...(version === 4 ? { referenceIds: ['original-file'] } : {}),
+    };
+    try {
+      acquireOperationalStateDatabase(root).close();
+      const legacy = new DatabaseSync(databasePath);
+      try {
+        legacy.exec(`
+          DROP TABLE session_task_output_snapshots;
+          DROP TABLE artifact_records;
+          DROP TABLE artifact_objects;
+          CREATE TABLE artifact_records (
+            artifact_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL CHECK (created_at >= 0),
+            relative_path TEXT NOT NULL,
+            record_json TEXT NOT NULL
+          );
+          CREATE INDEX artifact_records_session_order ON artifact_records(session_id, created_at, artifact_id);
+          CREATE UNIQUE INDEX artifact_records_relative_path ON artifact_records(relative_path);
+        `);
+        legacy
+          .prepare('INSERT INTO artifact_records VALUES (?, ?, ?, ?, ?)')
+          .run(
+            record.id,
+            record.sessionId,
+            record.createdAt,
+            record.relativePath,
+            JSON.stringify(record),
+          );
+        legacy
+          .prepare("UPDATE operational_schema_migrations SET version = ? WHERE scope = 'artifact'")
+          .run(version);
+      } finally {
+        legacy.close();
+      }
+      assert.throws(
+        () => acquireOperationalStateDatabase(root),
+        /Unsupported Artifact storage format/,
+      );
+      const preserved = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        assert.equal(
+          preserved.prepare('SELECT record_json FROM artifact_records').get()?.record_json,
+          JSON.stringify(record),
+        );
+        assert.equal(
+          preserved
+            .prepare("SELECT version FROM operational_schema_migrations WHERE scope = 'artifact'")
+            .get()?.version,
+          version,
+        );
+        assert.equal(
+          preserved.prepare("SELECT 1 FROM sqlite_schema WHERE name = 'artifact_objects'").get(),
+          undefined,
+        );
+      } finally {
+        preserved.close();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
 
 test('retires completed released migration metadata during schema convergence', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-operational-cutover-retirement-'));
@@ -957,14 +1052,37 @@ test('rejects a current Runtime schema whose versioned authority table is missin
   );
 });
 
+for (const table of [
+  'artifact_objects',
+  'session_task_output_snapshots',
+  'artifact_gc_paths',
+  'artifact_handoffs',
+]) {
+  test(`rejects a current Artifact schema missing ${table} without recreating it`, async () => {
+    await assertCurrentDatabaseRejected(
+      `missing-${table}`,
+      (database) => database.exec(`DROP TABLE ${table}`),
+      /Incomplete operational SQLite schema/,
+      (database) => {
+        assert.equal(
+          database
+            .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?")
+            .get(table),
+          undefined,
+        );
+      },
+    );
+  });
+}
+
 for (const { name, mutation } of [
   {
     name: 'a current authority index with an incompatible predicate',
     mutation: (database: DatabaseSync) =>
       database.exec(`
-        DROP INDEX artifact_records_relative_path;
-        CREATE UNIQUE INDEX artifact_records_relative_path
-          ON artifact_records(relative_path)
+        DROP INDEX artifact_objects_relative_path;
+        CREATE INDEX artifact_objects_relative_path
+          ON artifact_objects(relative_path)
           WHERE relative_path <> '';
       `),
   },
@@ -1367,6 +1485,12 @@ async function copyV016Database(databasePath: string): Promise<void> {
     new URL('../../test-fixtures/v0.1.6-operational-state/runtime.sqlite', import.meta.url),
     databasePath,
   );
+  const database = new DatabaseSync(databasePath);
+  try {
+    installCurrentArtifactFixture(database);
+  } finally {
+    database.close();
+  }
 }
 
 async function assertReleasedReminderRejected(

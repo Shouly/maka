@@ -20,17 +20,29 @@
 import { createHash } from 'node:crypto';
 import { open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import type { ArtifactRecord } from '@maka/core/artifacts';
+import { ArtifactSourceUnavailableError, type ArtifactRecord } from '@maka/core/artifacts';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
+import { TOOL_RESULT_FILE_MAX_BYTES } from '@maka/runtime/tool-result-file';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import { isPathInside } from '@maka/runtime/path-containment';
 import { type ToolArtifactRecorderInput } from '@maka/runtime/tool-artifacts';
-import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
+import {
+  createReadImageSnapshotPlanner,
+  type InteractiveArtifactStoreWriter,
+} from '@maka/storage/artifact-stores';
+import type { BuildBuiltinToolsOptions } from '@maka/runtime/builtin-tools';
 import type { SessionManagerDeps } from '@maka/runtime/session-manager';
+import type { PreparedFile } from '@maka/runtime/file-resource-projection';
 import type { SessionAdmissionGate } from './session-admission-gate.js';
 import type { SessionPresenceReader } from './session-presence.js';
 
 export interface HostExecutionArtifactServices {
+  snapshotImage?: NonNullable<BuildBuiltinToolsOptions['snapshotImage']>;
+  retainChildArtifacts?: NonNullable<SessionManagerDeps['retainChildArtifacts']>;
+  materializeFile?: (sessionId: string, ref: string) => Promise<PreparedFile | undefined>;
+  fileViewRoot?: (sessionId: string) => string;
+  transferredFileRefs?: (sessionId: string) => Promise<readonly string[]>;
+  restoreSessionFiles?: (sessionId: string) => Promise<void>;
   /**
    * Explicit SendUserFile delivery publishes the complete batch atomically
    * and returns records in candidate order. Automatically derived artifacts
@@ -45,6 +57,12 @@ export function createHostExecutionArtifactServices(input: {
   requestDrain: () => void;
   sessionAdmission: SessionAdmissionGate;
   sessions: SessionPresenceReader;
+  fileResources?: {
+    materialize(sessionId: string, ref: string): Promise<PreparedFile | undefined>;
+    sessionViewRoot(sessionId: string): string;
+    transferredFileRefs(sessionId: string): Promise<readonly string[]>;
+    restoreSessionFiles(sessionId: string): Promise<void>;
+  };
 }): HostExecutionArtifactServices {
   const runWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
     try {
@@ -62,6 +80,28 @@ export function createHostExecutionArtifactServices(input: {
       return runWrite(() => input.artifacts.create(artifact));
     });
 
+  const planImage = createReadImageSnapshotPlanner({
+    create: async (artifact) => {
+      const record = await publish(artifact);
+      if (!record)
+        throw new Error('The Session was removed before the image snapshot could be saved.');
+      return record;
+    },
+  });
+  const snapshotImage: NonNullable<HostExecutionArtifactServices['snapshotImage']> = async (
+    input,
+  ) => {
+    const plan = planImage({
+      sessionId: input.sessionId,
+      turnId: input.turnId ?? `read-image:${input.ownerId}`,
+      name: `Read image.${input.mimeType.slice('image/'.length)}`,
+      bytes: input.bytes,
+      mimeType: input.mimeType,
+    });
+    await plan.persist();
+    return plan.ref;
+  };
+
   const recordToolArtifacts = async (
     event: ToolArtifactRecorderInput,
   ): Promise<ArtifactRecord[]> => {
@@ -71,7 +111,11 @@ export function createHostExecutionArtifactServices(input: {
       const sourceFailures = new Set<unknown>();
       const batch = event.candidates.map((candidate) => {
         const readContent = candidate.readContent;
-        if (candidate.source !== 'user_delivery' || !readContent) {
+        if (
+          candidate.source !== 'user_delivery' ||
+          (!readContent && !candidate.reuseArtifactId) ||
+          (readContent && candidate.reuseArtifactId)
+        ) {
           throw new Error('File delivery requires an authorised content reader');
         }
         return {
@@ -82,20 +126,24 @@ export function createHostExecutionArtifactServices(input: {
           source: candidate.source,
           ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
           ...(candidate.summary ? { summary: candidate.summary } : {}),
-          readContent: async () => {
-            try {
-              const content = await readContent();
-              if (contentBytes(content) > MAX_ATTACHMENT_BYTES) {
-                throw new Error(
-                  `Attachment "${candidate.name}" exceeds the ${MAX_ATTACHMENT_BYTES}-byte size limit.`,
-                );
-              }
-              return content;
-            } catch (error) {
-              sourceFailures.add(error);
-              throw error;
-            }
-          },
+          ...(candidate.reuseArtifactId
+            ? { reuseArtifactId: candidate.reuseArtifactId, maxBytes: MAX_ATTACHMENT_BYTES }
+            : {
+                readContent: async () => {
+                  try {
+                    const content = await readContent!();
+                    if (contentBytes(content) > MAX_ATTACHMENT_BYTES) {
+                      throw new Error(
+                        `Attachment "${candidate.name}" exceeds the ${MAX_ATTACHMENT_BYTES}-byte size limit.`,
+                      );
+                    }
+                    return content;
+                  } catch (error) {
+                    sourceFailures.add(error);
+                    throw error;
+                  }
+                },
+              }),
         };
       });
       return input.sessionAdmission.runOrJoin(event.sessionId, async () => {
@@ -107,9 +155,39 @@ export function createHostExecutionArtifactServices(input: {
         } catch (error) {
           // An unreadable/denied source is an ordinary tool failure. Only a
           // storage or rollback failure should drain the Host.
-          if (!sourceFailures.has(error)) input.requestDrain();
+          if (!sourceFailures.has(error) && !(error instanceof ArtifactSourceUnavailableError))
+            input.requestDrain();
           throw error;
         }
+      });
+    }
+    if (event.candidates.some((candidate) => candidate.source === 'saved_tool_output')) {
+      const batch = event.candidates.map((candidate) => {
+        if (
+          candidate.source !== 'saved_tool_output' ||
+          candidate.content === undefined ||
+          contentBytes(candidate.content) > TOOL_RESULT_FILE_MAX_BYTES
+        ) {
+          throw new Error('Saved output requires bounded producer content');
+        }
+        const content =
+          typeof candidate.content === 'string'
+            ? candidate.content
+            : new Uint8Array(candidate.content);
+        return {
+          sessionId: event.sessionId,
+          turnId: event.turnId,
+          name: candidate.name,
+          kind: candidate.kind,
+          source: candidate.source,
+          mimeType: candidate.mimeType,
+          readContent: async () => content,
+        };
+      });
+      return input.sessionAdmission.runOrJoin(event.sessionId, async () => {
+        if ((await input.sessions.probeSessionRemoval(event.sessionId)).kind !== 'present')
+          throw new Error('Session was removed before output publication');
+        return runWrite(() => input.artifacts.createBatch(batch));
       });
     }
     const recorded: ArtifactRecord[] = [];
@@ -135,7 +213,28 @@ export function createHostExecutionArtifactServices(input: {
   };
 
   const services: HostExecutionArtifactServices = {
+    ...(input.fileResources
+      ? {
+          materializeFile: input.fileResources.materialize,
+          fileViewRoot: input.fileResources.sessionViewRoot,
+          transferredFileRefs: input.fileResources.transferredFileRefs,
+          restoreSessionFiles: input.fileResources.restoreSessionFiles,
+        }
+      : {}),
     recordToolArtifacts,
+    snapshotImage,
+    retainChildArtifacts: (parentSessionId, childSessionId, artifactIds) =>
+      input.sessionAdmission.runOrJoin(parentSessionId, async () => {
+        if ((await input.sessions.probeSessionRemoval(parentSessionId)).kind !== 'present')
+          throw new Error('The parent Session was removed before file hand-back.');
+        return runWrite(() =>
+          input.artifacts.retainChildArtifacts({
+            sourceSessionId: childSessionId,
+            targetSessionId: parentSessionId,
+            artifactIds,
+          }),
+        );
+      }),
     publishChildWorkspacePatch: async ({ sessionId, turnId, binding, patch }) => {
       const artifact = await publish({
         id: subagentWritebackArtifactId(sessionId, turnId),

@@ -29,6 +29,7 @@
 
 import { getHostSettings, type RuntimeHostAppSettings } from '../bridge/settings.js';
 import { createStore } from 'zustand/vanilla';
+import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import type { TaskSubmissionReadinessSnapshot } from '@maka/core/task-submission-readiness';
 import type { ChatModelChoice } from '@maka/core/chat-model-choice';
 import * as api from '../bridge/new-tasks.js';
@@ -109,24 +110,12 @@ export function sessionHostViewsClientPath(
   );
 }
 
-/**
- * What a Session's saved tool output offers to reveal, file by file: the
- * reveal, or nothing. Nothing when the Session's files are not on this disk
- * (`hostViewsClientPath`, from {@link sessionHostViewsClientPath}), and
- * nothing for a file outside the Session's own folder: main reveals only from
- * the folder of the Session that asks. A branched or revised Session has its
- * own copy of each saved output it carries, under its own folder; a path the
- * copy could not bring, its file already gone, still names the source's.
- */
+/** Main resolves the Session's owned resource and materializes it on this device. */
 export function savedOutputRevealer(
   sessionId: string,
-  hostViewsClientPath: boolean,
-  reveal: (path: string) => void,
-): (path: string) => (() => void) | undefined {
-  return (path) =>
-    hostViewsClientPath && path.split(/[\\/]/u).at(-2) === sessionId
-      ? () => reveal(path)
-      : undefined;
+  reveal: (ref: string) => void,
+): (ref: string) => (() => void) | undefined {
+  return (ref) => (sessionId && parseAttachmentResourceRef(ref) ? () => reveal(ref) : undefined);
 }
 
 /**

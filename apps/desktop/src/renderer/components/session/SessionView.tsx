@@ -35,7 +35,7 @@
 //   why a command can never race the policy.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { revealSessionFile, revealToolResultFile } from '../../bridge/app.js';
+import { showArtifactInFolder, revealToolResultFile } from '../../bridge/app.js';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -70,7 +70,6 @@ import {
 import { useTurnPresentation, pendingTurnActionKey } from '../../hooks/use-turn-presentation.js';
 import {
   activeSessionStore,
-  newTaskStore,
   planStore,
   revisionDraftStore,
   revisionActions,
@@ -78,7 +77,7 @@ import {
   turnActionsStore,
   uiStore,
 } from '../../store/index.js';
-import { savedOutputRevealer, sessionHostViewsClientPath } from '../../store/new-task-store.js';
+import { savedOutputRevealer } from '../../store/new-task-store.js';
 import { requestScheduledTaskFocus } from '../../store/scheduled-tasks-store.js';
 import { reviewableProposal } from '../../store/plan-store.js';
 import { revisionRefusalFor } from '../../store/revision-draft.js';
@@ -215,18 +214,6 @@ function SessionTranscript(props: SessionViewProps) {
     if (!row || linkedSubagentParentSessionId(row) === undefined) return undefined;
     return agentParentOf(row, new Map(state.sessions.map((session) => [session.id, session])))?.id;
   });
-  // A saved Bash output is on this disk only when the Host is: for a Host on
-  // another machine the block offers nothing to reveal.
-  const sessionHost = useStore(
-    sessionsStore,
-    useShallow((state) => {
-      const row = state.sessions.find((session) => session.id === sessionId);
-      return row ? { profileId: row.profileId, runtimeHostId: row.runtimeHostId } : undefined;
-    }),
-  );
-  const revealsLocalFiles = useStore(newTaskStore, (state) =>
-    sessionHostViewsClientPath(state.catalog, sessionHost),
-  );
   useEffect(() => {
     if (!hostAdmitted) {
       planStore.disconnect();
@@ -362,29 +349,19 @@ function SessionTranscript(props: SessionViewProps) {
       onOpenFile: (path: string | undefined) => openWorkbarFile(sessionId, path),
       onOpenArtifact: (artifactId: string) => openWorkbarArtifact(sessionId, artifactId),
       onOpenTerminal: (ref: string) => openWorkbarTerminal(sessionId, ref),
-      // A delivered file goes to its destination AS ITSELF. The artifact
-      // routes materialize a copy under a temp presentation root, which is
-      // right for something the session produced and wrong here: this file is
-      // already in the user's project, and revealing a shadow of it answers a
-      // question nobody asked. Main resolves this session's root and re-checks
-      // the path lands inside it, so a delivery from elsewhere is refused —
-      // and says so, because a button that silently does nothing is worse.
-      onShowDeliveredFile: (path: string | undefined) => {
-        if (path === undefined) return;
-        void revealSessionFile(sessionId, path).then((result) => {
-          if (result.ok) return;
-          const delivery = getTranscriptCopy(locale).delivery;
-          toastApi.error(
-            delivery.openFailed,
-            result.reason === 'not-allowed' ? delivery.openOutsideWorkspace : undefined,
-          );
-        });
+      // Both actions address the immutable delivered file, including after
+      // the working file or the source Session has been removed.
+      onShowDeliveredFile: (artifactId: string) => {
+        const delivery = getTranscriptCopy(locale).delivery;
+        void showArtifactInFolder(sessionId, artifactId).then(
+          (result) => {
+            if (!result.ok) toastApi.error(delivery.openFailed);
+          },
+          () => toastApi.error(delivery.openFailed),
+        );
       },
-      // A Bash output too long to show, saved under this session's temp
-      // folder: revealed in the file manager, never opened, and only the path
-      // main builds for this session. A temp file does not outlive a restart,
-      // so a missing one says why.
-      savedOutputReveal: savedOutputRevealer(sessionId, revealsLocalFiles, (path) => {
+      // Saved resources are resolved within this Session and materialized by main.
+      savedOutputReveal: savedOutputRevealer(sessionId, (path) => {
         const saved = getTranscriptCopy(locale).result.savedOutput;
         void revealToolResultFile(sessionId, path).then(
           (result) => {
@@ -404,7 +381,7 @@ function SessionTranscript(props: SessionViewProps) {
         uiStore.navigate({ section: 'automations', module: 'scheduled-tasks' });
       },
     }),
-    [sessionId, locale, revealsLocalFiles],
+    [sessionId, locale],
   );
 
   // Read through a ref, so the callback stays one function while the turns

@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { formatWithOptions } from 'node:util';
 import { describe, test } from 'node:test';
 import {
+  classifyGeneralizedError,
   generalizedErrorMessage,
   generalizedErrorMessageForLocale,
   redactSecrets,
@@ -444,6 +445,69 @@ describe('generalizedErrorMessageForLocale', () => {
       assert.equal(
         generalizedErrorMessageForLocale(new Error(raw), 'fallback', 'zh-TW'),
         '網路錯誤',
+      );
+    }
+  });
+});
+
+describe('classifyGeneralizedError rate-limit boundaries', () => {
+  test('does not interpret a Session UUID as an HTTP status', () => {
+    const recorded =
+      "Error invoking remote method 'sessions:archive': RuntimeHostOperationError: Session 2f34a351-f4e7-4295-983a-686e4f2daeea has a live Runtime Resource";
+    for (const message of [recorded, recorded.replace('-4295-', '-4285-')]) {
+      assert.equal(classifyGeneralizedError(new Error(message)), undefined);
+      assert.equal(
+        generalizedErrorMessage(new Error(message), 'Could not archive task'),
+        'Could not archive task',
+      );
+    }
+  });
+
+  test('does not classify identifiers, file paths, or ordinary words as rate limits', () => {
+    for (const message of [
+      'Session task-429-log has pending work',
+      "ENOENT: open '/tmp/429/report.md'",
+      "ENOENT: open 'C:\\tasks\\429\\report.md'",
+      'Could not enumerate files',
+      'Failed to generate a report',
+      'Separate task is still running',
+      'Corporate configuration is unavailable',
+      'Invalid sample rate: 44100',
+      'Provider returned status=4295',
+    ]) {
+      assert.equal(classifyGeneralizedError(message), undefined, message);
+      assert.equal(generalizedErrorMessage(message, 'fallback'), 'fallback', message);
+    }
+  });
+
+  test('still recognizes real HTTP 429 and explicit provider rate-limit signals', () => {
+    for (const message of [
+      '429',
+      '429 Authorization: Bearer secret-value',
+      'HTTP 429 Too Many Requests',
+      'HTTP/1.1 429 Too Many Requests',
+      'Request failed with status code 429',
+      'Failed request (status=429)',
+      '{"statusCode":429,"message":"retry later"}',
+      'OpenAI rate limit reached for model gpt-4',
+      'rate_limit_exceeded',
+      'rate-limited',
+      'RateLimitError',
+      'RateLimitExceeded',
+      'rate exceeded',
+      'Too many requests',
+    ]) {
+      assert.equal(classifyGeneralizedError(new Error(message)), 'rate_limited', message);
+      assert.equal(generalizedErrorMessage(message), 'Rate limit exceeded', message);
+      assert.equal(
+        generalizedErrorMessageForLocale(message, '后备', 'zh-CN'),
+        '触发模型速率限制',
+        message,
+      );
+      assert.equal(
+        generalizedErrorMessageForLocale(message, '備援', 'zh-TW'),
+        '已達模型速率限制',
+        message,
       );
     }
   });

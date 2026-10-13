@@ -27,7 +27,7 @@
 import type { SessionEvent } from '@maka/core/events';
 import type { SessionInjections } from './injection/session-injections.js';
 import type { InjectionContext } from './injection/turn-injections.js';
-import type { RuntimeEventInjectionContent } from '@maka/core/runtime-event';
+import type { RuntimeEvent, RuntimeEventInjectionContent } from '@maka/core/runtime-event';
 import type {
   BackendKind,
   RuntimeSystemNoteKind,
@@ -242,6 +242,12 @@ export interface AiSdkBackendInput extends AiSdkCompactionCapabilities {
    * user turn may be rendered as provider image parts instead of placeholder text.
    * Caller wires this to the session ArtifactStore; runtime never imports storage.
    */
+  /** Materialize declared file dependencies in this backend's execution environment. */
+  resolveFilePath?: import('./file-resource-projection.js').ModelFilePathResolver;
+  /** Existing environment injection, emitted only on a file-environment change. */
+  prepareFileEnvironment?: (
+    events: readonly RuntimeEvent[],
+  ) => Promise<InjectionContext | undefined>;
   readAttachmentBytes?: AttachmentByteReader;
   /**
    * Optional size lookup for stored images, read without their bytes. When
@@ -434,6 +440,7 @@ export class AiSdkBackend implements AgentBackend {
         return activated.filter((name) => deferred.has(name));
       },
       supportsVision: input.supportsVision,
+      resolveFilePath: input.resolveFilePath,
       readAttachmentBytes: input.readAttachmentBytes,
       readAttachmentSize: input.readAttachmentSize,
       maxProviderImageRequestBytes: input.maxProviderImageRequestBytes,

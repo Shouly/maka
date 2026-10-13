@@ -193,6 +193,7 @@ export const ARTIFACT_SOURCES = [
   'deep_research',
   'user_upload',
   'user_delivery',
+  'saved_tool_output',
   'session_effect',
 ] as const;
 
@@ -241,6 +242,9 @@ export interface ArtifactRecord extends ArtifactDescriptor {
   deepResearchRole?: import('./deep-research-run.js').DeepResearchArtifactRole;
 }
 
+/** Immutable resource description, independent of any Session's membership. */
+export type ArtifactResource = Omit<ArtifactRecord, 'sessionId'>;
+
 interface ArtifactSourcePolicy {
   readonly userDeletable: boolean;
   readonly userVisible: boolean;
@@ -257,10 +261,21 @@ const ARTIFACT_SOURCE_POLICIES = {
   // deliverable, not evidence: it belongs in the Files face, travels with a
   // shared session, and the user who received it may delete it again.
   user_delivery: { userDeletable: true, userVisible: true, sharedReadable: true },
+  saved_tool_output: { userDeletable: false, userVisible: false, sharedReadable: true },
   session_effect: { userDeletable: false, userVisible: false, sharedReadable: false },
 } as const satisfies Record<ArtifactSource, ArtifactSourcePolicy>;
 
+/** Ordinary source unavailability is not a storage-corruption/Host-drain signal. */
+export class ArtifactSourceUnavailableError extends Error {
+  constructor(message = 'File resource was not found in this Session') {
+    super(message);
+    this.name = 'ArtifactSourceUnavailableError';
+  }
+}
+
 const CHILD_RESULT_OUTPUT_SOURCES = new Set<ArtifactSource>([
+  'user_delivery',
+  'saved_tool_output',
   'tool_result',
   'tool_result_projection',
   'subagent_writeback',

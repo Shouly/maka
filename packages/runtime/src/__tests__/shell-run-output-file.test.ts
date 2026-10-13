@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -30,7 +30,7 @@ import {
   taskOutputRoot,
   writeShellRunOutputFile,
 } from '../shell-run-output-file.js';
-import { linkSavedOutputFile, toolResultSaveTicket } from '../tool-result-file.js';
+import { readShellRunOutputSnapshot } from '../shell-run-output-file.js';
 
 const ROOTS: string[] = [];
 after(async () => {
@@ -156,16 +156,16 @@ describe('the file a background command writes for the model to read', () => {
     }
   });
 
-  test('a purge of the folder refuses a copy that started before it', async () => {
+  test('a snapshot sees a complete queued revision and stays fixed after later writes', async () => {
     const base = await root();
-    const source = shellRunOutputFilePath(base, 'session-1', 'sr_1');
-    await writeShellRunOutputFile(record({ outputFile: source }));
-    const ticket = toolResultSaveTicket();
-    await purgeSessionShellRunOutputFiles(base, 'branch');
-    await assert.rejects(
-      linkSavedOutputFile(source, shellRunOutputFilePath(base, 'branch', 'sr_1'), ticket),
-      /retired/u,
+    const outputFile = shellRunOutputFilePath(base, 'session-1', 'sr_1');
+    const first = writeShellRunOutputFile(record({ outputFile, revision: 1 }));
+    const snapshot = readShellRunOutputSnapshot(outputFile);
+    const later = writeShellRunOutputFile(
+      record({ outputFile, revision: 2, status: 'completed', exitCode: 0 }),
     );
-    assert.deepEqual(await readdir(base), ['session-1']);
+    await Promise.all([first, later]);
+    assert.equal(Buffer.from(await snapshot).toString('utf8'), '\n[running]\n');
+    assert.equal(await readFile(outputFile, 'utf8'), '\n[exited with code 0]\n');
   });
 });

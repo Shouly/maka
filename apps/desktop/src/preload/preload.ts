@@ -268,6 +268,7 @@ import {
   projectDesktopSessionSummary,
   projectDesktopTurnRecord,
   projectDesktopUsageStats,
+  type DesktopSessionActionResult,
   type DesktopSessionSummary,
   type DesktopSessionSummaryInput,
   type DesktopSessionUpdateResult,
@@ -2367,10 +2368,10 @@ const makaBridge = {
         unsubscribeMounts();
       };
     },
-    archive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<void> {
+    archive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<DesktopSessionActionResult<void>> {
       return invokeSessionRuntimeHost('sessions:archive', sessionId, options);
     },
-    unarchive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<void> {
+    unarchive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<DesktopSessionActionResult<void>> {
       return invokeSessionRuntimeHost('sessions:unarchive', sessionId, options);
     },
     setFlagged(sessionId: string, isFlagged: boolean, options?: { revisionFamily?: boolean }): Promise<void> {
@@ -2451,10 +2452,10 @@ const makaBridge = {
     async remove(
       sessionId: string,
       options?: { revisionFamily?: boolean; requireArchived?: boolean },
-    ): Promise<{ disposition: 'removed' | 'restored'; archivedSubtaskCount: number }> {
+    ): Promise<DesktopSessionActionResult<{ disposition: 'removed' | 'restored'; archivedSubtaskCount: number }>> {
       const session = await runtimeHostSessionRef(sessionId);
       if (await ipcRenderer.invoke('session-local:discard', session.scope, session.sessionId)) {
-        return { disposition: 'removed', archivedSubtaskCount: 0 };
+        return { ok: true, result: { disposition: 'removed', archivedSubtaskCount: 0 } };
       }
       return invokeSessionRuntimeHost('sessions:remove', sessionId, options);
     },

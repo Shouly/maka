@@ -47,6 +47,20 @@ const runtimeRef = 'maka://runtime/background-tasks/shell-1';
 type PipeShellSnapshot = Extract<ShellRunSnapshotResult, { mode: 'pipes' }>;
 
 describe('Runtime Resource protocol', () => {
+  test('the resource protocol rejects filesystem-path resolution and results', () => {
+    const input = {
+      kind: 'resolve_saved_output',
+      sessionId: 'session-1',
+      path: '/old/tool-results/source/log.txt',
+    };
+    assertInvalid(() => decodeRuntimeResourceQueryInput(input));
+    const result = { kind: 'saved_output', sessionId: 'session-1', path: null, bound: false };
+    assertInvalid(() => decodeRuntimeResourceQueryResult(result));
+    assertInvalid(() => decodeRuntimeResourceQueryInput({ ...input, other: true }));
+    assertInvalid(() => decodeRuntimeResourceQueryInput({ ...input, path: 'x'.repeat(16385) }));
+    assertInvalid(() => decodeRuntimeResourceQueryResult({ ...result, path: 'x'.repeat(16385) }));
+  });
+
   test('rejects unknown fields and non-canonical snapshots', () => {
     assert.deepEqual(
       decodeRuntimeResourceStartInput({

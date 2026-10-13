@@ -167,6 +167,7 @@ export interface ComposerCopy {
     readonly blockedNoWorkspace: string;
     readonly blockedNoModel: string;
     readonly blockedReadiness: string;
+    readonly readinessUnavailable: string;
     readonly failedTitle: string;
     readonly failedFallback: string;
     readonly outcomeUnknownTitle: string;
@@ -286,6 +287,7 @@ const COMPOSER_COPY = {
       blockedNoWorkspace: '先选择一个工作区。',
       blockedNoModel: '先配置一个模型连接。',
       blockedReadiness: '当前环境暂时无法接受新任务。',
+      readinessUnavailable: '暂时无法读取运行环境状态，请稍后重试。',
       failedTitle: '消息发送失败',
       failedFallback: '未能发送这条消息。',
       outcomeUnknownTitle: '发送结果未知',
@@ -403,6 +405,7 @@ const COMPOSER_COPY = {
       blockedNoWorkspace: '請先選擇一個工作區。',
       blockedNoModel: '請先設定一個模型連線。',
       blockedReadiness: '目前環境暫時無法接受新任務。',
+      readinessUnavailable: '暫時無法讀取執行環境狀態，請稍後重試。',
       failedTitle: '訊息傳送失敗',
       failedFallback: '未能傳送這條訊息。',
       outcomeUnknownTitle: '傳送結果未知',
@@ -526,6 +529,7 @@ const COMPOSER_COPY = {
       blockedNoWorkspace: 'Choose a workspace first.',
       blockedNoModel: 'Set up a model connection first.',
       blockedReadiness: 'This environment cannot accept a new task right now.',
+      readinessUnavailable: 'Could not read the environment status. Please try again.',
       failedTitle: 'The message could not be sent',
       failedFallback: 'The message was not sent.',
       outcomeUnknownTitle: 'The result is unknown',

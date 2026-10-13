@@ -35,7 +35,10 @@ import {
 import type { ShellRunBashInput, ShellRunWriteInput } from '@maka/runtime/shell-run-contract';
 import { ShellPreferenceError } from '@maka/runtime/shell-detect';
 import { SessionNotFoundError } from '@maka/storage/session-store';
-import { RUNTIME_RESOURCE_RESULT_MAX_BYTES } from '../protocol/runtime-resource.js';
+import {
+  RUNTIME_RESOURCE_RESULT_MAX_BYTES,
+  decodeRuntimeResourceQueryInput,
+} from '../protocol/runtime-resource.js';
 import type { ConnectionContext } from '../server/operation-dispatcher.js';
 import {
   HostRuntimeResourceCoordinator,
@@ -47,6 +50,24 @@ const SESSION_ID = 'session-1';
 const RUNTIME_REF = 'maka://runtime/background-tasks/shell-1';
 
 describe('Host Runtime Resource coordinator', () => {
+  test('runtime resource requests cannot expose private Host paths', () => {
+    assert.throws(() =>
+      decodeRuntimeResourceQueryInput({
+        kind: 'resolve_saved_output',
+        sessionId: SESSION_ID,
+        path: '/private/output.txt',
+      }),
+    );
+    assert.throws(() =>
+      decodeRuntimeResourceQueryInput({
+        kind: 'get',
+        sessionId: SESSION_ID,
+        ref: RUNTIME_REF,
+        path: '/private/output.txt',
+      }),
+    );
+  });
+
   test('pages one stable bounded projection and rejects stale continuation revisions', async () => {
     const harness = createHarness();
     harness.updates = Array.from({ length: 65 }, (_, index) => resourceUpdate(index));
@@ -654,6 +675,65 @@ describe('Host Runtime Resource coordinator', () => {
     ](control, firstConnection);
     assert.equal(retryAfterDisconnect.ok, false);
     assert.equal(!retryAfterDisconnect.ok && retryAfterDisconnect.error.code, 'operation_conflict');
+  });
+
+  test('unavailable inherited history is not live and keeps its original status', async () => {
+    const harness = createHarness();
+    for (const status of ['starting', 'running'] as const) {
+      const historical = resourceUpdate(0, {
+        ownership: { kind: 'source_unavailable', sourceSessionId: 'source-session' },
+        result: { ...compactState(0), status },
+      });
+      harness.updates = [historical];
+      assert.equal(await harness.coordinator.hasLiveSessionResources(SESSION_ID), false);
+      const queried = await harness.coordinator.handlers['runtime.resource.query'](
+        { kind: 'get', sessionId: SESSION_ID, ref: historical.result.ref },
+        connection('connection-1'),
+      );
+      assert.ok(queried.ok && queried.result.kind === 'resource');
+      assert.deepEqual(queried.result.resource, historical, 'liveness must not rewrite history');
+    }
+    harness.updates = [];
+    assert.equal(await harness.coordinator.hasLiveSessionResources(SESSION_ID), false);
+  });
+
+  test('active local and source-owned resources still count alongside unavailable history', async () => {
+    const harness = createHarness();
+    const historical = resourceUpdate(0, {
+      ownership: { kind: 'source_unavailable', sourceSessionId: 'deleted-source' },
+    });
+    for (const ownership of [
+      { kind: 'local' },
+      { kind: 'source_owned', sourceSessionId: 'branch-session', ownerSessionId: 'owner-session' },
+    ] as const) {
+      for (const status of ['starting', 'running'] as const) {
+        const live = resourceUpdate(1, { ownership, result: { ...pipeSnapshot(1), status } });
+        harness.updates = [historical, live];
+        assert.equal(await harness.coordinator.hasLiveSessionResources(SESSION_ID), true);
+        harness.updates = [
+          historical,
+          {
+            ...live,
+            result: { ...live.result, status: 'completed', exitCode: 0, completedAt: 2 },
+          },
+        ];
+        assert.equal(await harness.coordinator.hasLiveSessionResources(SESSION_ID), false);
+      }
+    }
+  });
+
+  test('live-resource read failures are not treated as an idle Session', async () => {
+    const harness = createHarness();
+    for (const error of [
+      Object.assign(new Error('Resource store read failed'), { code: 'EIO' }),
+      new SessionNotFoundError(SESSION_ID),
+    ]) {
+      harness.stateReadFailure = error;
+      await assert.rejects(
+        harness.coordinator.hasLiveSessionResources(SESSION_ID),
+        (actual) => actual === error,
+      );
+    }
   });
 
   test('holds Host residency for a live background process and closes startup on drain', async () => {

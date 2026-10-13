@@ -23,13 +23,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import { MAX_ATTACHMENT_BYTES } from '@maka/core/attachments';
-import type {
-  ReadImageSnapshotReader,
-  ReadImageSnapshotSizeReader,
-} from '@maka/core/context-offload';
 import { type StorageRef } from '@maka/core/events';
 import {
-  createArtifactAttachmentResourceReader,
   createAttachmentByteReader,
   createAttachmentSizeReader,
   createReadImageSnapshotPlanner,
@@ -51,35 +46,14 @@ function readArtifactBinary(store: ArtifactAuthorityStore, artifactId: string) {
 }
 
 describe('artifact attachment authority', () => {
-  test('reads only live user-uploaded text within the invoking Session', async () => {
+  test('does not hydrate or size the retired context-image refs', async () => {
     await withStore(async (store) => {
-      await store.create({
-        id: 'notes-1',
-        sessionId: 'session-1',
-        turnId: 'turn-1',
-        name: 'notes.txt',
-        kind: 'file',
-        content: 'attachment marker',
-        mimeType: 'text/plain',
-        source: 'user_upload',
-        now: 1,
-      });
-      const reader = createArtifactAttachmentResourceReader({ artifactStore: store });
-      const signal = new AbortController().signal;
-
-      assert.deepEqual(await reader.readAttachmentResource('session-1', 'notes-1', signal), {
-        kind: 'text',
-        text: 'attachment marker',
-      });
-      await assert.rejects(
-        reader.readAttachmentResource('session-2', 'notes-1', signal),
-        /not found in this Session/,
-      );
-      await store.deleteUserArtifactInSession('session-1', 'notes-1');
-      await assert.rejects(
-        reader.readAttachmentResource('session-1', 'notes-1', signal),
-        /not found in this Session/,
-      );
+      const reader = createAttachmentByteReader({ artifactStore: store, sessionId: 'session-1' });
+      const sizes = createAttachmentSizeReader({ artifactStore: store, sessionId: 'session-1' });
+      for (const ref of [sessionContextRef('ref-1'), sessionContextRef('ref-2', 'other-session')]) {
+        assert.deepEqual(await reader(ref), { ok: false, reason: 'unsupported_ref_kind' });
+        assert.deepEqual(await sizes(ref), { ok: false, reason: 'unsupported_ref_kind' });
+      }
     });
   });
 
@@ -140,59 +114,6 @@ describe('artifact attachment authority', () => {
         ok: false,
         reason: 'too_large',
       });
-      const unavailableReader = createAttachmentByteReader({
-        artifactStore: store,
-        sessionId: 'session-1',
-        readImageSnapshotsUnavailable: true,
-      });
-      assert.deepEqual(await unavailableReader(sessionContextRef('ref-1')), {
-        ok: false,
-        reason: 'unavailable',
-      });
-    });
-  });
-
-  test('routes durable context refs through the Session-bound snapshot reader', async () => {
-    await withStore(async (store) => {
-      const reads: string[] = [];
-      const readImageSnapshots: ReadImageSnapshotReader = {
-        async read(ref) {
-          reads.push(ref.refId);
-          if (ref.refId === 'missing') return { ok: false, reason: 'not_found' };
-          return {
-            ok: true,
-            record: {
-              refId: ref.refId,
-              sessionId: ref.sessionId,
-              owner: { kind: 'read_image_snapshot', ownerId: 'owner-1' },
-              blobId: 'a'.repeat(64),
-              sizeBytes: png.byteLength,
-              mediaType: 'image/png',
-              createdAt: 1,
-            },
-            bytes: png,
-          };
-        },
-      };
-      const reader = createAttachmentByteReader({
-        artifactStore: store,
-        sessionId: 'session-1',
-        readImageSnapshots,
-      });
-
-      assert.deepEqual(await reader(sessionContextRef('ref-1')), {
-        ok: true,
-        bytes: png,
-      });
-      assert.deepEqual(await reader(sessionContextRef('missing')), {
-        ok: false,
-        reason: 'not_found',
-      });
-      assert.deepEqual(await reader(sessionContextRef('ref-2', 'other-session')), {
-        ok: false,
-        reason: 'session_mismatch',
-      });
-      assert.deepEqual(reads, ['ref-1', 'missing']);
     });
   });
 
@@ -267,51 +188,28 @@ describe('artifact attachment authority', () => {
     });
   });
 
-  test('looks Read image snapshot sizes up through the Session-bound snapshot reader', async () => {
+  test('Read observations use the same Artifact byte and size readers after the source is purged', async () => {
     await withStore(async (store) => {
-      const stats: string[] = [];
-      const readImageSnapshots: ReadImageSnapshotSizeReader = {
-        async stat(ref) {
-          stats.push(ref.refId);
-          if (ref.refId === 'missing') return { ok: false, reason: 'not_found' };
-          return {
-            ok: true,
-            record: {
-              refId: ref.refId,
-              sessionId: ref.sessionId,
-              owner: { kind: 'read_image_snapshot', ownerId: 'owner-1' },
-              blobId: 'a'.repeat(64),
-              sizeBytes: 1234,
-              mediaType: 'image/png',
-              createdAt: 1,
-            },
-          };
-        },
-      };
-      const sizes = createAttachmentSizeReader({
-        artifactStore: store,
+      const ref = await createReadImageSnapshotter(store)({
         sessionId: 'session-1',
-        readImageSnapshots,
+        turnId: 'turn-1',
+        name: 'observed.png',
+        bytes: png,
+        mimeType: 'image/png',
       });
-
-      assert.deepEqual(await sizes(sessionContextRef('ref-1')), { ok: true, bytes: 1234 });
-      assert.deepEqual(await sizes(sessionContextRef('missing')), {
-        ok: false,
-        reason: 'not_found',
+      await store.copyConversationArtifacts({
+        sourceSessionId: 'session-1',
+        targetSessionId: 'branch',
+        turnIds: ['turn-1'],
       });
-      assert.deepEqual(await sizes(sessionContextRef('ref-2', 'other-session')), {
-        ok: false,
-        reason: 'session_mismatch',
-      });
-      assert.deepEqual(stats, ['ref-1', 'missing']);
-      assert.deepEqual(
-        await createAttachmentSizeReader({
-          artifactStore: store,
-          sessionId: 'session-1',
-          readImageSnapshotsUnavailable: true,
-        })(sessionContextRef('ref-1')),
-        { ok: false, reason: 'unavailable' },
-      );
+      await store.purgeSessionArtifacts('session-1');
+      await store.collectGarbage({ maxPaths: 100 });
+      const owned = { ...ref, sessionId: 'branch' };
+      const reader = createAttachmentByteReader({ artifactStore: store, sessionId: 'branch' });
+      const sizes = createAttachmentSizeReader({ artifactStore: store, sessionId: 'branch' });
+      assert.deepEqual(await reader(owned), { ok: true, bytes: Buffer.from(png) });
+      assert.deepEqual(await sizes(owned), { ok: true, bytes: png.byteLength });
+      assert.deepEqual(await reader(ref), { ok: false, reason: 'session_mismatch' });
     });
   });
 
@@ -375,7 +273,9 @@ describe('artifact attachment authority', () => {
 
   test('planner derives the final ref without publishing before commit', async () => {
     await withStore(async (store) => {
-      const bytes = png.slice();
+      // The local filesystem executor may return a Buffer, whose slice is
+      // a shared view rather than the copy Uint8Array.slice would provide.
+      const bytes = Buffer.from(png);
       const input = {
         sessionId: 'session-1',
         turnId: 'turn-1',

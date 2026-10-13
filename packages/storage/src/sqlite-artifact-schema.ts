@@ -18,88 +18,70 @@
  */
 
 import type { DatabaseSync } from 'node:sqlite';
-import {
-  decodeArtifactRecordJsons,
-  isSafeRelativeArtifactPath,
-} from './artifact-metadata-codec.js';
 
-export const SQLITE_ARTIFACT_SCHEMA_VERSION = 3;
+export const SQLITE_ARTIFACT_SCHEMA_VERSION = 7;
 
+/** A fresh format, not a migration or a destructive reset of earlier workspaces. */
 export function migrateSqliteArtifactDatabase(db: DatabaseSync): void {
-  const columns = db.prepare('PRAGMA table_info(artifact_records)').all() as Array<{
-    name?: unknown;
-  }>;
-  const retained: string[] = [];
-  // Every path the old table named. Whatever is not carried over is a file no
-  // catalog will name again, and this is the last moment anything knows it is
-  // there. Unlinking here is not an option: a rollback after one would be
-  // unrecoverable, so the paths are recorded for the store to reclaim later.
-  const scanned: string[] = [];
-  const hasStatusColumn = columns.some(({ name }) => name === 'status');
-  if (hasStatusColumn || columns.some(({ name }) => name === 'storage_key')) {
-    const rows = db.prepare('SELECT * FROM artifact_records').all();
-    for (const row of rows) {
-      if (typeof row.relative_path === 'string' && isSafeRelativeArtifactPath(row.relative_path)) {
-        scanned.push(row.relative_path);
-      }
-      try {
-        const parsed = JSON.parse(String(row.record_json));
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-        if (
-          parsed.id !== row.artifact_id ||
-          parsed.sessionId !== row.session_id ||
-          parsed.createdAt !== row.created_at ||
-          parsed.relativePath !== row.relative_path
-        )
-          continue;
-        if (
-          [hasStatusColumn ? row.status : undefined, parsed.status].some(
-            (value) => value !== undefined && value !== null && value !== 'live',
-          )
-        )
-          continue;
-        delete parsed.status;
-        retained.push(JSON.stringify(parsed));
-      } catch {}
-    }
-    db.exec('DROP TABLE artifact_records');
+  const existing = db
+    .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'artifact_records'")
+    .get();
+  if (existing) {
+    const registry = db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'operational_schema_migrations'",
+      )
+      .get();
+    const version = registry
+      ? db
+          .prepare("SELECT version FROM operational_schema_migrations WHERE scope = 'artifact'")
+          .get()?.version
+      : undefined;
+    if (version !== SQLITE_ARTIFACT_SCHEMA_VERSION)
+      throw new Error(
+        'Unsupported Artifact storage format; create a new workspace. Existing data was not changed.',
+      );
+    // The authority's exact schema check detects corruption without repairing it.
+    return;
   }
   db.exec(`
-    CREATE TABLE IF NOT EXISTS artifact_records (
+    CREATE TABLE artifact_objects (
       artifact_id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL CHECK (created_at >= 0),
       relative_path TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+      created_at INTEGER NOT NULL CHECK (created_at >= 0),
       record_json TEXT NOT NULL
     );
+    CREATE INDEX artifact_objects_relative_path ON artifact_objects(relative_path);
+    CREATE INDEX artifact_objects_created_order ON artifact_objects(created_at, artifact_id);
 
-    CREATE INDEX IF NOT EXISTS artifact_records_session_order
-      ON artifact_records(session_id, created_at, artifact_id);
+    CREATE TABLE artifact_records (
+      session_id TEXT NOT NULL,
+      artifact_id TEXT NOT NULL REFERENCES artifact_objects(artifact_id),
+      PRIMARY KEY (session_id, artifact_id)
+    );
+    CREATE INDEX artifact_records_artifact_id ON artifact_records(artifact_id);
 
-    CREATE UNIQUE INDEX IF NOT EXISTS artifact_records_relative_path
-      ON artifact_records(relative_path);
+    -- A completed hand-back outlives removal of the receiver's membership or
+    -- the source Session. It is evidence, not an ownership grant or a Blob pin.
+    CREATE TABLE artifact_handoffs (
+      session_id TEXT NOT NULL,
+      source_session_id TEXT NOT NULL,
+      artifact_id TEXT NOT NULL,
+      PRIMARY KEY (session_id, source_session_id, artifact_id)
+    );
 
-    CREATE TABLE IF NOT EXISTS artifact_upgrade_orphan_paths (
+    CREATE TABLE artifact_gc_paths (
       relative_path TEXT PRIMARY KEY
     );
-  `);
-  const carried = decodeArtifactRecordJsons(retained);
-  const kept = new Set(carried.map((record) => record.relativePath));
-  const orphan = db.prepare(`
-    INSERT INTO artifact_upgrade_orphan_paths VALUES (?)
-    ON CONFLICT(relative_path) DO NOTHING
-  `);
-  for (const relativePath of scanned) if (!kept.has(relativePath)) orphan.run(relativePath);
-  const insert = db.prepare(`
-    INSERT INTO artifact_records VALUES (?, ?, ?, ?, ?)
-  `);
-  for (const record of carried) {
-    insert.run(
-      record.id,
-      record.sessionId,
-      record.createdAt,
-      record.relativePath,
-      JSON.stringify(record),
+
+    CREATE TABLE session_task_output_snapshots (
+      session_id TEXT NOT NULL,
+      shell_run_id TEXT NOT NULL,
+      artifact_id TEXT,
+      PRIMARY KEY (session_id, shell_run_id),
+      FOREIGN KEY (session_id, artifact_id)
+        REFERENCES artifact_records(session_id, artifact_id) ON DELETE CASCADE
     );
-  }
+  `);
 }

@@ -120,6 +120,7 @@ test('a refused projection preserves a shared image until Session cleanup', asyn
     const record = (await store.getInSession(ref.sessionId, ref.relativePath)).record;
     assert.ok(record);
     await store.purgeSessionArtifacts('session-1');
+    await store.collectGarbage({ maxPaths: 100 });
     await assert.rejects(stat(join(root, 'artifacts', record.relativePath)), { code: 'ENOENT' });
     assert.equal((await store.listPage('session-1', { offset: 0, limit: 10 })).total, 0);
     assert.deepEqual(
@@ -184,5 +185,75 @@ test('Hosted execution publishes contained Tool Artifacts', async () => {
   } finally {
     await owner.close();
     await rm(base, { recursive: true, force: true });
+  }
+});
+
+test('saved output publication uses its own bounded, atomic producer contract', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'maka-host-saved-output-'));
+  const owner = await tryAcquireInteractiveRootOwner(
+    await resolveStorageRoot({ path: root, kind: 'interactive' }),
+  );
+  assert.ok(owner);
+  const store = await openInteractiveArtifactStoreForWrite(owner.lease);
+  let present = true;
+  const services = createHostExecutionArtifactServices({
+    artifacts: store,
+    sessionAdmission: new SessionAdmissionGate(),
+    sessions: {
+      probeSessionRemoval: async () => (present ? { kind: 'present' } : { kind: 'absent' }),
+    },
+    requestDrain: () => assert.fail('source validation must not drain the Host'),
+  });
+  const event = {
+    sessionId: 'session-1',
+    turnId: 'turn-1',
+    toolUseId: 'tool-1',
+    toolName: 'Bash',
+    args: {},
+    result: undefined,
+    cwd: root,
+  };
+  try {
+    const records = await services.recordToolArtifacts({
+      ...event,
+      candidates: [
+        { kind: 'file', name: 'output.txt', source: 'saved_tool_output', content: 'whole output' },
+      ],
+    });
+    assert.equal(records.length, 1);
+    await assert.rejects(
+      services.recordToolArtifacts({
+        ...event,
+        candidates: [
+          { kind: 'file', name: 'good.txt', source: 'saved_tool_output', content: 'good' },
+          {
+            kind: 'file',
+            name: 'bad.txt',
+            source: 'saved_tool_output',
+            sourcePath: '/untrusted/path',
+          },
+        ],
+      }),
+      /bounded producer content/,
+    );
+    assert.equal((await store.listPage('session-1', { offset: 0, limit: 10 })).total, 1);
+    present = false;
+    await assert.rejects(
+      services.recordToolArtifacts({
+        ...event,
+        candidates: [
+          { kind: 'file', name: 'late.txt', source: 'saved_tool_output', content: 'late' },
+        ],
+      }),
+      /removed before output/,
+    );
+    assert.deepEqual(await store.readTextInSession('session-1', records[0]!.id), {
+      ok: true,
+      text: 'whole output',
+    });
+  } finally {
+    store.close();
+    await owner.close();
+    await rm(root, { recursive: true, force: true });
   }
 });

@@ -422,25 +422,23 @@ for (const searchQuery of [undefined, 'select:NoSuchTool', 'select:SearchSkills'
   });
 }
 
-test('production recovery leaves upgrade residue for explicitly started maintenance', async () => {
+test('production recovery leaves unpublished Blobs for explicitly started maintenance', async () => {
   await withCompositionRoot(async ({ root, owner }) => {
     const composition = await createExecutionRuntimeHostComposition(compositionContext(owner));
-    const directory = join(root, 'artifacts', 'retired');
-    const path = join(directory, 'orphan');
+    const directory = join(root, 'artifacts', 'blobs', 'sha256', 'aa');
+    const path = join(directory, 'a'.repeat(64));
     await mkdir(directory, { recursive: true });
     await writeFile(path, 'old bytes');
     const database = new DatabaseSync(join(root, 'runtime.sqlite'));
     try {
       database
-        .prepare('INSERT INTO artifact_upgrade_orphan_paths VALUES (?)')
-        .run('retired/orphan');
+        .prepare('INSERT INTO artifact_gc_paths VALUES (?)')
+        .run(`blobs/sha256/aa/${'a'.repeat(64)}`);
       await composition.recover();
       assert.equal((await stat(path)).size, 9);
       composition.startMaintenance?.();
       await waitFor(async () => {
-        return (
-          database.prepare('SELECT count(*) AS n FROM artifact_upgrade_orphan_paths').get()?.n === 0
-        );
+        return database.prepare('SELECT count(*) AS n FROM artifact_gc_paths').get()?.n === 0;
       });
       await assert.rejects(stat(path), { code: 'ENOENT' });
     } finally {

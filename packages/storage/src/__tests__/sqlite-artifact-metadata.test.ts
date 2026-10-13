@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,7 +28,7 @@ import type { ArtifactRecord } from '@maka/core/artifacts';
 import { OPERATIONAL_STATE_DATABASE_NAME } from '../operational-state-store.js';
 import { createSqliteArtifactMetadataRepository } from '../sqlite-artifact-metadata.js';
 
-test('Artifact metadata changes only write changed rows', async () => {
+test('Artifact descriptors are immutable and membership admission is idempotent', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-artifact-metadata-delta-'));
   const repository = createSqliteArtifactMetadataRepository(root);
   let inspector: DatabaseSync | undefined;
@@ -48,8 +49,12 @@ test('Artifact metadata changes only write changed rows', async () => {
       BEGIN INSERT INTO artifact_write_audit VALUES ('delete'); END;
     `);
 
+    assert.throws(
+      () => repository.applyChanges({ upserts: [{ ...updated, summary: 'changed' }] }),
+      /different immutable/,
+    );
     repository.applyChanges({
-      upserts: [unchanged, { ...updated, summary: 'changed' }, artifactRecord('added')],
+      upserts: [unchanged, updated, artifactRecord('added')],
       deleteIds: [removed.id],
     });
 
@@ -61,7 +66,6 @@ test('Artifact metadata changes only write changed rows', async () => {
       [
         { kind: 'delete', count: 1 },
         { kind: 'insert', count: 1 },
-        { kind: 'update', count: 1 },
       ],
     );
     assert.deepEqual(
@@ -72,7 +76,7 @@ test('Artifact metadata changes only write changed rows', async () => {
       [
         { id: 'added', summary: undefined },
         { id: 'unchanged', summary: undefined },
-        { id: 'updated', summary: 'changed' },
+        { id: 'updated', summary: undefined },
       ],
     );
 
@@ -89,7 +93,7 @@ test('Artifact metadata changes only write changed rows', async () => {
   }
 });
 
-test('Artifact metadata recovery ignores records from unsupported sources', async () => {
+test('Artifact metadata corruption is rejected rather than silently losing memberships', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-artifact-metadata-unsupported-'));
   const repository = createSqliteArtifactMetadataRepository(root);
   let inspector: DatabaseSync | undefined;
@@ -102,30 +106,30 @@ test('Artifact metadata recovery ignores records from unsupported sources', asyn
       source: 'retired_artifact_source',
     };
     inspector = new DatabaseSync(join(root, OPERATIONAL_STATE_DATABASE_NAME));
-    const insert = inspector.prepare(`
-        INSERT INTO artifact_records(
-          artifact_id,
-          session_id,
-          created_at,
-          relative_path,
-          record_json
-        ) VALUES (?, ?, ?, ?, ?)
-      `);
-    insert.run(
-      unsupported.id,
-      unsupported.sessionId,
-      unsupported.createdAt,
-      unsupported.relativePath,
-      JSON.stringify(unsupported),
-    );
-
-    assert.deepEqual(repository.readAll(), [supported]);
+    inspector
+      .prepare('INSERT INTO artifact_objects VALUES (?, ?, ?, ?, ?)')
+      .run(
+        unsupported.id,
+        unsupported.relativePath,
+        unsupported.sizeBytes,
+        unsupported.createdAt,
+        JSON.stringify(unsupported),
+      );
+    inspector
+      .prepare('INSERT INTO artifact_records VALUES (?, ?)')
+      .run(unsupported.sessionId, unsupported.id);
+    assert.throws(() => repository.readAll(), /Invalid immutable Artifact metadata/);
   } finally {
     inspector?.close();
     repository.close();
     await rm(root, { recursive: true, force: true });
   }
 });
+
+function blobPath(text: string): string {
+  const hash = createHash('sha256').update(text).digest('hex');
+  return `blobs/sha256/${hash.slice(0, 2)}/${hash}`;
+}
 
 function artifactRecord(id: string): ArtifactRecord {
   return {
@@ -136,7 +140,7 @@ function artifactRecord(id: string): ArtifactRecord {
     name: `${id}.txt`,
     kind: 'file',
     sizeBytes: id.length,
-    relativePath: `session-1/${id}-${id}.txt`,
+    relativePath: blobPath(id),
     source: 'tool_result',
   };
 }

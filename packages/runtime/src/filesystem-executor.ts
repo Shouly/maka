@@ -196,6 +196,11 @@ export function createBoundaryFilesystemExecutor(
   const workerFor = (
     boundary: ExecutionBoundary | undefined,
   ): Pick<FilesystemWorkerClient, 'execute'> | undefined => {
+    if (boundary?.kind === 'external' && input.workspace.facts.isolation === 'none') {
+      throw new Error(
+        'External filesystem execution requires an external workspace executor; Host-local fallback is unavailable.',
+      );
+    }
     if (boundary?.kind === 'bypass' || boundary?.kind === 'external') return undefined;
     if (input.worker) return input.worker;
     if (boundary?.kind !== 'managed') return undefined;

@@ -18,7 +18,7 @@
  */
 
 // What the model reads for a background task, on every tool that can hand
-// one back — Bash starting it, Read on its ref, TaskStop and TaskInput. The
+// one back — Bash starting it, TaskStop and TaskInput. The
 // shapes follow the reference harness: starting a task answers with a
 // sentence naming the ref; reading it answers with the output the way a Read
 // numbers a file, ending in one bracketed status line ("[exited with code 0]",
@@ -38,7 +38,7 @@ interface ShellRunLikeResult {
   readonly cmd?: unknown;
   readonly exitCode?: unknown;
   readonly failureMessage?: unknown;
-  readonly outputFile?: unknown;
+  readonly outputRef?: unknown;
   readonly timeoutMs?: unknown;
   /** A pipes or PTY output record; `capturedOutput` reads whichever it is. */
   readonly output?: unknown;
@@ -91,11 +91,11 @@ function startedLine(result: ShellRunLikeResult): string {
   const terminal =
     result.mode === 'pty' ? ' It has a terminal: send keystrokes with TaskInput.' : '';
   const id = shellRunIdOfRef(result.ref);
-  const outputFile =
-    typeof result.outputFile === 'string'
-      ? ` Output is being written to: ${result.outputFile}. To check interim output, use Read on that file path.`
+  const output =
+    typeof result.outputRef === 'string'
+      ? ' Its current output file is supplied below. A conversation branch freezes its own output snapshot.'
       : '';
-  return `Command running in background with ID: ${id}. You will be notified when it completes.${outputFile} To end it, use TaskStop.${terminal}`;
+  return `Command running in background with ID: ${id}. You will be notified when it completes.${output} To end it, use TaskStop.${terminal}`;
 }
 
 /** The id inside a runtime ref; the model is given the id alone. */

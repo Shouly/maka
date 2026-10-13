@@ -58,6 +58,11 @@ export type DesktopSessionUpdateResult<Session> =
   | { readonly ok: true; readonly session: Session }
   | { readonly ok: false; readonly code: DesktopSessionUpdateFailureCode };
 
+/** Expected action refusals cross Electron IPC as data, not a flattened Error. */
+export type DesktopSessionActionResult<Result> =
+  | { readonly ok: true; readonly result: Result }
+  | { readonly ok: false; readonly code: DesktopSessionUpdateFailureCode };
+
 export interface DesktopSessionHost extends DesktopHostRef {
   readonly profileId: string;
   readonly profileName: string;

@@ -25,6 +25,7 @@
 // block the harness authors. The preamble exists because the message rides in
 // the user role — it says, before anything else, that no human wrote it.
 
+import { taskOutputResourceRef } from '@maka/core/file-resources';
 import type { ShellRunRecord } from '@maka/core/shell-run';
 import { wrapSystemReminder } from './system-reminder.js';
 
@@ -106,7 +107,7 @@ export function renderTaskNotification(record: ShellRunRecord): string {
     `<task-id>${inBlock(record.shellRunId)}</task-id>`,
     `<tool-use-id>${inBlock(record.sourceToolCallId)}</tool-use-id>`,
     ...(record.outputFile !== undefined
-      ? [`<output-file>${inBlock(record.outputFile)}</output-file>`]
+      ? [`<output-ref>${inBlock(taskOutputResourceRef(record.shellRunId))}</output-ref>`]
       : []),
     `<status>${taskNotificationStatus(record)}</status>`,
     `<summary>${inBlock(taskNotificationSummary(record))}</summary>`,

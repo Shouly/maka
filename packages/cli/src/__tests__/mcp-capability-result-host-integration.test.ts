@@ -18,7 +18,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { parseAttachmentResourceRef } from '@maka/core/attachments';
+import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
+import {
+  openInteractiveArtifactStoreForWrite,
+  type InteractiveArtifactStoreWriter,
+} from '@maka/storage/artifact-stores';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -66,10 +72,10 @@ test('a CLI MCP result the protocol carries reaches the Host as the server sent 
       rows: Array.from({ length: 2_000 }, (_, index) => ({ index, label: `value ${index}` })),
     },
   };
-  await withCliMcpHost([small, long], async (call) => {
+  await withCliMcpHost([small, long], async (call, readResource) => {
     assert.deepEqual(await call(), small, 'every block and structuredContent, unchanged');
 
-    const { notice, file } = saved(await call());
+    const { notice, file } = saved(await call(), readResource);
     assert.match(notice, /^Output too long to show \([\d,]+ characters\)\. The full output/u);
     assert.equal(await file, mcpResultFileText(long).text);
   });
@@ -103,8 +109,8 @@ for (const { what, result, last } of UNCARRIED) {
     timeout: 30_000,
   }, async () => {
     assert.throws(() => decodeClientCapabilityResult(result));
-    await withCliMcpHost([result], async (call) => {
-      const { file } = saved(await call());
+    await withCliMcpHost([result], async (call, readResource) => {
+      const { file } = saved(await call(), readResource);
       const text = mcpResultFileText(result).text;
       assert.ok(text.includes(last));
       assert.equal(await file, `--- text ---\n${text}`);
@@ -128,12 +134,21 @@ test('a CLI MCP result past the protocol byte limit fails the call naming the CL
 });
 
 /** The notice the Host's tool returned, and the file it names. */
-function saved(output: unknown): { notice: string; file: Promise<string> } {
-  const content = (output as McpCallResult).content;
+function saved(
+  output: unknown,
+  readResource: (id: string) => Promise<string>,
+): { notice: string; file: Promise<string> } {
+  const result = decodeCanonicalToolResultContent(output);
+  assert.ok(result.kind === 'json');
+  const content = (result.value as McpCallResult).content;
   assert.equal(content.length, 1);
   const notice = content[0]?.type === 'text' ? content[0].text : '';
-  const path = /saved to (\S+);/u.exec(notice)?.[1] ?? assert.fail(`Not saved: ${notice}`);
-  return { notice, file: readFile(path, 'utf8') };
+  const ref =
+    /saved to (\S+);/u.exec(notice)?.[1] ?? assert.fail('Expected a saved resource notice');
+  const parsed = parseAttachmentResourceRef(ref);
+  assert.ok(parsed);
+  assert.deepEqual(result.fileRefs, [ref], 'the durable result inventories its dependency');
+  return { notice, file: readResource(parsed.artifactId) };
 }
 
 /**
@@ -143,18 +158,23 @@ function saved(output: unknown): { notice: string; file: Promise<string> } {
  */
 async function withCliMcpHost(
   results: readonly McpCallResult[],
-  run: (call: () => Promise<unknown>) => Promise<void>,
+  run: (
+    call: () => Promise<unknown>,
+    readResource: (id: string) => Promise<string>,
+  ) => Promise<void>,
 ): Promise<void> {
   const base = await mkdtemp(join(tmpdir(), 'maka-cli-mcp-result-'));
   const hostRoot = join(base, 'host');
   let host: RuntimeHostKernel | undefined;
   let connection: RuntimeHostConnection | undefined;
   let release: (() => void) | undefined;
+  let artifacts: InteractiveArtifactStoreWriter | undefined;
   try {
     const owner = await tryAcquireInteractiveRootOwner(
       await resolveStorageRoot({ path: hostRoot, kind: 'interactive' }),
     );
     assert.ok(owner);
+    artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
     let coordinator: HostClientCapabilityCoordinator | undefined;
     host = await RuntimeHostKernel.start({
       owner,
@@ -164,7 +184,6 @@ async function withCliMcpHost(
           ...clientCapabilityCoordinatorTestAdmission(),
           activation: new RuntimePolicyActivationGate(),
           onModelToolsChanged: () => undefined,
-          toolResultRoot: join(base, 'tool-results'),
         });
         return {
           handlers: {
@@ -175,7 +194,10 @@ async function withCliMcpHost(
           releaseConnection: (connectionId) => coordinator?.releaseConnection(connectionId),
           beginDrain: () => coordinator?.beginDrain(),
           recover: async () => undefined,
-          close: async () => coordinator?.close(),
+          close: async () => {
+            await coordinator?.close();
+            artifacts?.close();
+          },
         };
       }),
     });
@@ -218,23 +240,43 @@ async function withCliMcpHost(
       snapshot?.tools.find((candidate) => candidate.name === mcpProxyToolName('srv', 'fetch')) ??
       assert.fail('Expected the CLI MCP tool on the Host');
     let calls = 0;
-    await run(async () =>
-      tool.impl(
-        {},
-        {
-          sessionId: SESSION_ID,
-          turnId: 'turn-mcp',
-          cwd: hostRoot,
-          toolCallId: `call-${++calls}`,
-          abortSignal: new AbortController().signal,
-          emitOutput: () => undefined,
-        },
-      ),
+    await run(
+      async () =>
+        tool.impl(
+          {},
+          {
+            sessionId: SESSION_ID,
+            turnId: 'turn-mcp',
+            cwd: hostRoot,
+            toolCallId: `call-${++calls}`,
+            abortSignal: new AbortController().signal,
+            emitOutput: () => undefined,
+            recordArtifacts: (candidates) =>
+              artifacts!.createBatch(
+                candidates.map((candidate) => ({
+                  sessionId: SESSION_ID,
+                  turnId: 'turn-mcp',
+                  name: candidate.name,
+                  kind: candidate.kind,
+                  source: candidate.source ?? 'tool_result',
+                  readContent: candidate.readContent ?? (async () => candidate.content!),
+                })),
+              ),
+          },
+        ),
+      async (id) => {
+        const file = await artifacts!.readTextInSession(SESSION_ID, id, {
+          maxBytes: 64 * 1024 * 1024,
+        });
+        assert.ok(file.ok);
+        return file.text;
+      },
     );
   } finally {
     release?.();
     await connection?.close().catch(() => undefined);
     await host?.close().catch(() => undefined);
+    artifacts?.close();
     await rm(base, { recursive: true, force: true });
   }
 }

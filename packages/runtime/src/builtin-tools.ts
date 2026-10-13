@@ -24,7 +24,6 @@
 
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import { z } from 'zod';
-import { jsonSchema, zodSchema } from 'ai';
 import {
   closeSync,
   constants,
@@ -49,9 +48,8 @@ import {
 } from './notebook.js';
 import { READ_MAX_TOKENS } from './text-line-window.js';
 import { compilePermissionProfile } from '@maka/core/permission-profile-compiler';
-import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { type SandboxBoundaryExpansion } from '@maka/core/sandbox-boundary';
-import { isStorageRef, type StorageRef, type ToolResultContent } from '@maka/core/events';
+import type { StorageRef } from '@maka/core/events';
 import { type PermissionProfile } from '@maka/core/permission-profile';
 import { bashToolResultToModelOutput } from './bash-model-output.js';
 import {
@@ -75,11 +73,7 @@ import {
 } from './shell-tools.js';
 import type { ShellRunLauncher } from './shell-tools.js';
 import { defaultShellPlan, throwIfShellSetupFailed, type TurnShellPlan } from './shell-detect.js';
-import type {
-  BackgroundTaskStopper,
-  PtyControlWriter,
-  RuntimeResourceReader,
-} from './shell-run-contract.js';
+import type { BackgroundTaskStopper, PtyControlWriter } from './shell-run-contract.js';
 import {
   createLocalWorkspaceExecutor,
   type WorkspaceExecResult,
@@ -258,14 +252,6 @@ function internalFilesystemWriteFailure(tool: string, subject: string, extra?: s
 
 export interface BuildBuiltinToolsOptions {
   shellRuns?: ShellRunLauncher;
-  runtimeResources?: RuntimeResourceReader;
-  attachmentResources?: {
-    readAttachmentResource(
-      sessionId: string,
-      artifactId: string,
-      abortSignal: AbortSignal,
-    ): Promise<ToolResultContent>;
-  };
   backgroundTasks?: BackgroundTaskStopper;
   ptyControls?: PtyControlWriter;
   executor?: WorkspaceExecutor;
@@ -293,10 +279,10 @@ export interface BuildBuiltinToolsOptions {
   snapshotImage?: (input: {
     sessionId: string;
     ownerId: string;
+    turnId?: string;
     bytes: Uint8Array;
     mimeType: string;
-  }) => Promise<Extract<StorageRef, { kind: 'session_context' }>>;
-  releaseImageSnapshot?: (input: { sessionId: string; refId: string }) => Promise<void>;
+  }) => Promise<Extract<StorageRef, { kind: 'session_file' }>>;
 }
 
 export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaTool[] {
@@ -307,7 +293,6 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     ...(options.permissionProfile ? { permissionProfile: options.permissionProfile } : {}),
   });
   const executionFacts = executor.facts;
-  const acceptsResourceRefs = Boolean(options.runtimeResources || options.attachmentResources);
   const fileChanges = options.fileChanges ?? new FileChangeTrackerRegistry();
   const trackerFor = (sessionId: string | undefined): SessionFileChangeTracker | undefined =>
     sessionId ? fileChanges.forSession(sessionId) : undefined;
@@ -321,12 +306,8 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     // The reference also reads PDFs by page; Maka has no PDF renderer, so a
     // PDF is refused as a binary file and `pages` does not exist.
     '- Reads images (PNG, JPG, …) and presents them visually. Reads Jupyter notebooks (.ipynb) as cells with outputs.',
-    // Maka's own: attachments are runtime resources, read by ref.
-    ...(acceptsResourceRefs
-      ? [
-          '- Pass `ref` instead of `file_path` to read a whole runtime resource — an attachment named in the conversation. A background command is read by its output file path, like any other file. Provide exactly one of `file_path` and `ref`.',
-        ]
-      : []),
+    '- Uses the same filesystem paths and bytes as Grep, Bash and Python. A path is never rebound to a different Session or snapshot.',
+    '- Use the current file paths supplied by the system. Copy saved inputs into the working directory before editing; execution copies are rebuildable, not durable working files.',
     '- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.',
     '- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.',
   ].join('\n');
@@ -345,82 +326,13 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
     .positive()
     .describe('The number of lines to read. Only provide if the file is too large to read at once.')
     .optional();
-  const refField = z
-    .string()
-    .describe('A runtime resource ref provided in the conversation or returned by another tool');
-  const fileReadParameters = z
+  const readParameters = z
     .object({
       file_path: filePathField,
       offset: offsetField,
       limit: limitField,
     })
     .strict();
-  const runtimeResourceReadParameters = z
-    .object({
-      ref: refField,
-    })
-    .strict();
-  // Some providers serialize every optional field with a default. Normalize
-  // only empty fields that cannot carry intent, then let the strict union keep
-  // rejecting genuinely ambiguous file-and-resource requests.
-  const normalizeProviderReadInput = (value: unknown): unknown => {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
-    const input = value as Record<string, unknown>;
-    const ref = input.ref;
-    const path = input.file_path;
-    if (typeof ref === 'string' && ref.trim() !== '') {
-      if (typeof path !== 'string' || path.trim() !== '') return value;
-      return Object.fromEntries(
-        Object.entries(input).filter(
-          ([key]) => key !== 'file_path' && key !== 'offset' && key !== 'limit',
-        ),
-      );
-    }
-    if (typeof ref !== 'string' || ref.trim() !== '') return value;
-    return Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'ref'));
-  };
-  const strictReadParameters = z.preprocess(
-    normalizeProviderReadInput,
-    z
-      .union([fileReadParameters, runtimeResourceReadParameters])
-      .describe(
-        'Read a file with file_path, or a whole runtime resource with ref; provide exactly one',
-      ),
-  );
-  // Provider-facing schema: a single top-level object with every field optional.
-  // Anthropic rejects a tool definition whose input schema carries a top-level
-  // `anyOf`, so the file-vs-ref exclusivity is stated in the field descriptions
-  // here and enforced authoritatively by the strict union in `validate` below
-  // (see #1228 — a union-generated `anyOf` had been leaking onto the wire).
-  const providerReadParameters = z
-    .object({
-      file_path: filePathField
-        .describe(
-          'The absolute path to the file to read. Provide either file_path (optionally with offset/limit) or ref, never both.',
-        )
-        .optional(),
-      offset: offsetField,
-      limit: limitField,
-      ref: refField
-        .describe(
-          'A runtime resource ref provided in the conversation or returned by another tool. Provide ref on its own, without file_path/offset/limit; omit it (or leave it empty) when reading a file.',
-        )
-        .optional(),
-    })
-    .describe(
-      'Read a file with file_path (optionally offset/limit), or a whole runtime resource with ref; provide exactly one of file_path or ref.',
-    );
-  const providerReadSchema = zodSchema(providerReadParameters);
-  const readParameters = acceptsResourceRefs
-    ? jsonSchema(async () => await providerReadSchema.jsonSchema, {
-        validate: async (value) => {
-          const result = await strictReadParameters.safeParseAsync(value);
-          return result.success
-            ? { success: true, value: result.data }
-            : { success: false, error: result.error };
-        },
-      })
-    : fileReadParameters;
   const shell = options.shell ?? { plan: defaultShellPlan() };
   const sandboxPlatform = options.sandboxPlatform ?? process.platform;
   const bashTools = options.shellRuns
@@ -520,72 +432,15 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
       description: readDescription,
       parameters: readParameters,
       executionFacts,
-      ...(options.releaseImageSnapshot
-        ? {
-            compensateDurableOutcomeCommitFailure: async (input: {
-              readonly result: unknown;
-              readonly sessionId: string;
-            }) => {
-              const result = input.result;
-              if (
-                !result ||
-                typeof result !== 'object' ||
-                (result as { kind?: unknown }).kind !== 'image'
-              ) {
-                return;
-              }
-              const ref = (result as { ref?: unknown }).ref;
-              if (
-                !isStorageRef(ref) ||
-                ref.kind !== 'session_context' ||
-                ref.sessionId !== input.sessionId
-              ) {
-                return;
-              }
-              await options.releaseImageSnapshot!({
-                sessionId: ref.sessionId,
-                refId: ref.refId,
-              });
-            },
-          }
-        : {}),
       impl: async (input, ctx) => {
-        const { cwd, sessionId, abortSignal } = ctx;
-        if ('ref' in input) {
-          const { ref } = input;
-          if (classifyRuntimeResourceRef(ref) !== 'runtime') {
-            throw new Error(`Unsupported runtime resource ref: ${ref}`);
-          }
-          const attachment = parseAttachmentResourceRef(ref);
-          if (attachment) {
-            if (!options.attachmentResources) {
-              throw new Error('Attachment resources are not available in this toolset');
-            }
-            return await options.attachmentResources.readAttachmentResource(
-              sessionId,
-              attachment.artifactId,
-              abortSignal,
-            );
-          }
-          if (!options.runtimeResources)
-            throw new Error('Runtime resources are not available in this toolset');
-          return await options.runtimeResources.readRuntimeResource(sessionId, ref, abortSignal);
-        }
+        const { cwd, sessionId } = ctx;
 
         const { file_path: requestedPath } = input as { file_path?: string };
         if (typeof requestedPath !== 'string' || requestedPath === '') {
-          throw new Error(
-            'Read requires file_path (the file to read) or ref (a runtime resource).',
-          );
+          throw new Error('Read requires file_path (the file to read).');
         }
         const path = expandHomePath(requestedPath);
         const { offset, limit } = input as { offset?: number; limit?: number };
-        const runtimeRef = classifyRuntimeResourceRef(path);
-        if (runtimeRef === 'unsupported')
-          throw new Error(`Unsupported runtime resource ref: ${path}`);
-        if (runtimeRef === 'runtime') {
-          throw new Error('Runtime resources must be read with the ref parameter, not file_path');
-        }
         // A binary format is refused by its name, before the file is looked at.
         const binary = binaryExtensionOf(path);
         if (binary && !isSupportedImagePath(path)) {
@@ -618,6 +473,7 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
           const ref = await options.snapshotImage({
             sessionId,
             ownerId: ctx.operationId,
+            ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
             bytes: result.bytes,
             mimeType: result.mimeType,
           });
@@ -1083,36 +939,35 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
         // `head_limit: 0` is no limit at all.
         const limit = head_limit === 0 ? undefined : (head_limit ?? DEFAULT_GREP_HEAD_LIMIT);
         const searchRoot = path === undefined ? '.' : expandHomePath(path);
+        const boundRoot = searchRoot;
         // Self-bound: ripgrep finishes in well under a second normally, but a
         // pathological tree (network mount, /proc, a FIFO) could hang it. The
         // stream watchdog no longer caps tool execution, so each spawning tool
         // must carry its own wall-clock timeout and honour the turn's abort.
-        const result = await filesystem.execute({
-          operation: {
-            kind: 'grep',
-            path: searchRoot,
-            pattern,
-            ...(glob ? { glob } : {}),
-            ...(type ? { type } : {}),
-            outputMode: mode,
-            ...(ignoreCase !== undefined ? { ignoreCase } : {}),
-            // Context and line numbers are `content` concepts; ripgrep rejects
-            // them beside -l/-c, so they are dropped rather than forwarded.
-            ...(mode === 'content'
-              ? {
-                  ...(after !== undefined ? { after } : {}),
-                  ...(before !== undefined ? { before } : {}),
-                  ...(lineNumbers !== undefined ? { lineNumbers } : {}),
-                  ...(onlyMatching !== undefined ? { onlyMatching } : {}),
-                }
-              : {}),
-            ...(multiline !== undefined ? { multiline } : {}),
-            ...(limit !== undefined ? { limit } : {}),
-            ...(offset !== undefined ? { offset } : {}),
-            timeoutMs: GREP_TIMEOUT_MS,
-          },
-          ...filesystemCall(ctx),
-        });
+        const operation = {
+          kind: 'grep' as const,
+          path: boundRoot,
+          pattern,
+          ...(glob ? { glob } : {}),
+          ...(type ? { type } : {}),
+          outputMode: mode,
+          ...(ignoreCase !== undefined ? { ignoreCase } : {}),
+          // Context and line numbers are `content` concepts; ripgrep rejects
+          // them beside -l/-c, so they are dropped rather than forwarded.
+          ...(mode === 'content'
+            ? {
+                ...(after !== undefined ? { after } : {}),
+                ...(before !== undefined ? { before } : {}),
+                ...(lineNumbers !== undefined ? { lineNumbers } : {}),
+                ...(onlyMatching !== undefined ? { onlyMatching } : {}),
+              }
+            : {}),
+          ...(multiline !== undefined ? { multiline } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(offset !== undefined ? { offset } : {}),
+          timeoutMs: GREP_TIMEOUT_MS,
+        };
+        const result = await filesystem.execute({ operation, ...filesystemCall(ctx) });
         if (result.kind !== 'grep')
           throw internalFilesystemReadFailure(
             'Grep',
@@ -1120,8 +975,8 @@ export function buildBuiltinTools(options: BuildBuiltinToolsOptions = {}): MakaT
             'the pattern is absent',
           );
         // Spelled as the call wrote its root, as Glob's paths are.
-        const root = resolvePath(ctx.cwd, searchRoot);
-        const resolvedRoot = canonicalExistingPath(root);
+        const root = boundRoot === searchRoot ? resolvePath(ctx.cwd, searchRoot) : searchRoot;
+        const resolvedRoot = canonicalExistingPath(resolvePath(ctx.cwd, boundRoot));
         return {
           matches: result.matches.map((line) => respellSearchLine(line, resolvedRoot, root)),
           cwd: ctx.cwd,
@@ -1702,25 +1557,4 @@ function terminalError(
     ...(sandboxDenied ? { reason: 'sandbox_denial', recoverable: true } : {}),
   });
   return error;
-}
-
-export function classifyRuntimeResourceRef(path: string): 'runtime' | 'file' | 'unsupported' {
-  let url: URL;
-  try {
-    url = new URL(path);
-  } catch {
-    return path.trimStart().toLowerCase().startsWith('maka:') ? 'unsupported' : 'file';
-  }
-  if (url.protocol !== 'maka:') return 'file';
-  if (
-    url.hostname !== 'runtime' ||
-    url.username ||
-    url.password ||
-    url.port ||
-    !url.pathname ||
-    url.pathname === '/'
-  ) {
-    return 'unsupported';
-  }
-  return 'runtime';
 }

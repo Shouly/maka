@@ -41,7 +41,7 @@ export class HostStorageMaintenance {
   #draining = false;
 
   constructor(input: {
-    artifacts: Pick<InteractiveArtifactStoreWriter, 'reclaimUpgradeResidue'>;
+    artifacts: Pick<InteractiveArtifactStoreWriter, 'collectGarbage'>;
     contextOffload?: Pick<InteractiveContextOffloadWriter, 'collectGarbage'>;
     onError: (name: string, error: unknown) => void;
   }) {
@@ -49,17 +49,17 @@ export class HostStorageMaintenance {
     let after: string | undefined;
     this.#lanes = [
       {
-        name: 'artifact upgrade cleanup',
+        name: 'artifact garbage collection',
         failures: 0,
         run: async () => {
-          const result = await input.artifacts.reclaimUpgradeResidue({
+          const result = await input.artifacts.collectGarbage({
             after,
             maxPaths: MAX_BATCH_ITEMS,
           });
           after = result.nextAfter ?? undefined;
           if (result.failedPaths > 0) {
             this.#report(
-              'artifact upgrade cleanup',
+              'artifact garbage collection',
               new Error(`${result.failedPaths} paths remain pending`),
             );
           }

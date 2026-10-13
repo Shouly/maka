@@ -228,10 +228,20 @@ describe('decodeCanonicalShellToolResultContent', () => {
       status: 'completed',
       exitCode: 0,
       output: pipeOutput('1\n2\n3'),
-      savedOutput: { path: '/tmp/maka/tool-results/s/r.txt', chars: 588_895, truncated: false },
+      savedOutput: { ref: 'maka://runtime/attachments/output', chars: 588_895, truncated: false },
     };
     assert.equal(decodeCanonicalShellToolResultContent(saved).state, 'valid');
+    assert.equal(
+      decodeCanonicalShellToolResultContent({
+        ...saved,
+        savedOutput: { ref: 'maka://runtime/attachments/stable', chars: 1, truncated: false },
+      }).state,
+      'valid',
+    );
     for (const savedOutput of [
+      { ref: 'file:///tmp/x', chars: 1, truncated: false },
+      { ref: 'maka://runtime/attachments/stable', path: '/tmp/x', chars: 1, truncated: false },
+      { path: '/tmp/maka/tool-results/s/r.txt', chars: 1, truncated: false },
       { path: '', chars: 1, truncated: false },
       { path: '/tmp/x.txt', chars: -1, truncated: false },
       { path: '/tmp/x.txt', chars: 1 },

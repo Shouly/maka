@@ -236,6 +236,7 @@ function OwnedChatInput(props: {
   const scopedDefaults = useStore(settingsStore.host, (state) => state.data?.chatDefaults);
   const newTask = useStore(newTaskStore);
   const connections = useStore(connectionsStore, (s) => s.data);
+  const connectionsError = useStore(connectionsStore, (s) => s.error);
   const readinessRevision = useStore(connectionsStore, (state) => state.revision);
   const pending = useStore(turnActionsStore, (s) => pendingActionsOf(s, sessionId));
 
@@ -259,10 +260,10 @@ function OwnedChatInput(props: {
 
   // Readiness is checked up front so the blocked hint appears before the
   // user types, and again at send time because it can change meanwhile.
-  const [ready, setReady] = useState<boolean>();
+  const [readinessState, setReadinessState] = useState<'ready' | 'blocked' | 'unavailable'>();
   useEffect(() => {
     let current = true;
-    setReady(undefined);
+    setReadinessState(undefined);
     const read = hostSessionId
       ? getTaskReadinessSnapshot(undefined, hostSessionId)
       : (localTarget ?? props.target)
@@ -273,10 +274,10 @@ function OwnedChatInput(props: {
         : Promise.resolve(undefined);
     void read
       .then((snapshot) => {
-        if (current) setReady(snapshot?.state === 'ready');
+        if (current) setReadinessState(snapshot?.state === 'ready' ? 'ready' : 'blocked');
       })
       .catch(() => {
-        if (current) setReady(false);
+        if (current) setReadinessState('unavailable');
       });
     return () => {
       current = false;
@@ -413,9 +414,11 @@ function OwnedChatInput(props: {
       ? copy.send.blockedNoWorkspace
       : !sessionId && newTask.connections && !newTask.model
         ? copy.send.blockedNoModel
-        : ready === false
-          ? copy.send.blockedReadiness
-          : undefined;
+        : readinessState === 'unavailable'
+          ? copy.send.readinessUnavailable
+          : readinessState === 'blocked'
+            ? copy.send.blockedReadiness
+            : undefined;
   // A target whose connection catalog has not answered yet is neither
   // blocked nor sendable: the hint would be a lie, the send a guess.
   const targetSettled = Boolean(sessionId || newTask.connections);
@@ -1161,6 +1164,16 @@ function OwnedChatInput(props: {
     <ModelMenu
       dense
       choices={modelChoices}
+      {...(session
+        ? {
+            catalogState: connectionsError
+              ? ('unavailable' as const)
+              : connections
+                ? ('ready' as const)
+                : ('loading' as const),
+            onRetry: () => void connectionsStore.refresh(),
+          }
+        : {})}
       current={
         session
           ? { connectionSlug: session.llmConnectionSlug, model: session.model }

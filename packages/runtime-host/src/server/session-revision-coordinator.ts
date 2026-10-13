@@ -32,19 +32,15 @@ import {
   cloneConversationRuntimeLedger,
   collectConversationCopyLinkedChildReferences,
   collectConversationCopyChildNotifications,
-  collectConversationCopySavedOutputPaths,
+  collectConversationCopyTaskOutputIds,
   collectConversationCopySessionContextRefIds,
   collectConversationCopySessionFileRefs,
-  conversationCopySavedOutputFolders,
-  copyConversationSavedOutputs,
   createConversationCopySlice,
   prepareConversationRuntimeLedgerCopy,
-  type ConversationCopySavedOutputRoots,
   type ConversationCopySlice,
   type ConversationRuntimeLedgerCopyPlan,
 } from '@maka/runtime/conversation-copy';
 import { type SessionManager } from '@maka/runtime/session-manager';
-import { toolResultSaveTicket } from '@maka/runtime/tool-result-file';
 import {
   authenticateInteractiveArtifactStoreWriter,
   type InteractiveArtifactStoreWriter,
@@ -117,12 +113,13 @@ export interface HostSessionRevisionCoordinatorOptions {
   >;
   readonly isSessionActive: (sessionId: string) => boolean;
   readonly requestDrain: () => void;
-  /**
-   * Where saved tool results and background task output live. A copy puts
-   * the files its slice names into the target's own folders, and a discarded
-   * copy takes them away again. Absent, a copy carries none.
-   */
-  readonly savedOutputRoots?: ConversationCopySavedOutputRoots;
+  /** Private producer folders, used only when rolling back a Session. */
+  readonly savedOutputRoots?: { readonly toolResults: string; readonly taskOutputs: string };
+  readonly freezeTaskOutputs?: (
+    sourceSessionId: string,
+    targetSessionId: string,
+    shellRunIds: readonly string[],
+  ) => Promise<void>;
 }
 
 /** Host authority for exact, retryable cross-Session branch and revision copies. */
@@ -302,7 +299,6 @@ export class HostSessionRevisionCoordinator {
   ): Promise<ConversationCopyOutcome | ConversationCopyAdmissionRetry> {
     // Taken before anything is read: a retirement of the target that purges
     // its folders after this moment keeps every saved output out of them.
-    const savedOutputTicket = toolResultSaveTicket();
     const existing = await this.#resolveExistingTarget(kind, input, requestFingerprint, false);
     if (existing) return existing;
 
@@ -413,6 +409,14 @@ export class HostSessionRevisionCoordinator {
       );
     }
     const copyTurnIds = plan.copyTurnIds;
+    const copyEvents = [
+      ...plan.inlineRuntimeEvents,
+      ...plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
+    ];
+    const taskOutputIds = collectConversationCopyTaskOutputIds({
+      messages: slice.messages,
+      runtimeEvents: copyEvents,
+    });
     const linkedChildRequests = collectConversationCopyLinkedChildReferences({
       messages: slice.messages,
       runtimeEvents: plan.runs.flatMap(({ runtimeEvents }) => runtimeEvents),
@@ -533,41 +537,28 @@ export class HostSessionRevisionCoordinator {
         sourceSessionId: input.sourceSessionId,
         targetSessionId: input.targetSessionId,
         turnIds: copyTurnIds,
+        taskOutputIds,
         ...(referencedSessionFileIds.size > 0
           ? { includeArtifactIds: [...referencedSessionFileIds] }
           : {}),
-        ...(kind !== 'revision' && linkedReferences.references.size > 0
-          ? {
-              linkedArtifacts: [...linkedReferences.references].map(([sessionId, references]) => ({
-                sessionId,
-                artifactIds: [...references.artifactIds],
-              })),
-            }
-          : {}),
+        // Child identities validate graph control only. File hand-back must
+        // already belong to the source Session; copying never borrows a child's
+        // ownership to repair a missing hand-back.
       });
-      const savedOutputRoots = this.options.savedOutputRoots;
-      const savedOutputPaths = savedOutputRoots
-        ? await copyConversationSavedOutputs({
-            roots: savedOutputRoots,
-            sourceSessionId: input.sourceSessionId,
-            targetSessionId: input.targetSessionId,
-            paths: collectConversationCopySavedOutputPaths({
-              folders: Object.values(
-                conversationCopySavedOutputFolders(savedOutputRoots, input.sourceSessionId),
-              ),
-              messages: slice.messages,
-              plan,
-            }),
-            ticket: savedOutputTicket,
-          })
-        : new Map<string, string>();
+      if (taskOutputIds.length > 0) {
+        if (!this.options.freezeTaskOutputs)
+          throw new Error('Task output snapshot authority is unavailable');
+        await this.options.freezeTaskOutputs(
+          input.sourceSessionId,
+          input.targetSessionId,
+          taskOutputIds,
+        );
+      }
       const references = {
         mode: 'exact' as const,
         sourceSessionId: input.sourceSessionId,
         targetSessionId: input.targetSessionId,
         artifactIds: artifactCopy.artifactIds,
-        relativePaths: artifactCopy.relativePaths,
-        savedOutputPaths,
         contextRefs: new Map(
           contextCopy.copied.map(({ sourceRefId, targetRefId }) => [sourceRefId, targetRefId]),
         ),

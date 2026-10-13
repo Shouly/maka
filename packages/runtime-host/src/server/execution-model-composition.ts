@@ -60,7 +60,6 @@ import {
   type InteractiveArtifactStoreWriter,
 } from '@maka/storage/artifact-stores';
 import type { InteractiveContextOffloadReader } from '@maka/storage/context-offload-store';
-import { createReadImageSnapshotReader } from '@maka/storage/read-image-snapshot-store';
 import type { RuntimePolicyStoresWriter } from '@maka/storage/runtime-policy-stores';
 import type { InteractiveUsageStoresWriter } from '@maka/storage/usage-stores';
 import {
@@ -69,6 +68,11 @@ import {
 } from './oauth-execution-authority.js';
 import type { HostChildAgentBackendCapabilities } from './child-agent-composition.js';
 import type { HostExecutionArtifactServices } from './execution-artifacts.js';
+import {
+  createHostModelFilePathResolver,
+  createHostFileEnvironmentPreparation,
+  restrictWorkHubFileBoundary,
+} from './file-resource-model-paths.js';
 import type { HostMemoryPassCoordinator } from './memory-pass-coordinator.js';
 import {
   readDuringBackendCreation,
@@ -363,22 +367,30 @@ async function buildHostAiSdkBackend(
       }
     : undefined;
   const planProjectionImage = createReadImageSnapshotPlanner(input.artifacts);
+  const readExecutionBoundary = async () => {
+    const boundary = await input.context.store.readExecutionBoundary(input.context.sessionId);
+    return input.context.header.toolProfile === 'workhub-coordination-v2'
+      ? restrictWorkHubFileBoundary(
+          boundary,
+          input.executionArtifacts.fileViewRoot?.(input.context.sessionId),
+          input.context.header.cwd,
+        )
+      : boundary;
+  };
+
+  const resolveFilePath =
+    input.executionArtifacts.materializeFile &&
+    input.context.header.toolProfile !== 'workhub-coordination-v1'
+      ? createHostModelFilePathResolver({
+          sessionId: input.context.sessionId,
+          cwd: input.context.header.cwd,
+          readBoundary: readExecutionBoundary,
+          materialize: input.executionArtifacts.materializeFile,
+        })
+      : undefined;
+  const viewRoot = input.executionArtifacts.fileViewRoot?.(input.context.sessionId);
 
   try {
-    // One snapshot reader serves both the bytes and the sizes of Read images.
-    const imageSnapshots = {
-      ...(input.contextOffload
-        ? {
-            readImageSnapshots: createReadImageSnapshotReader(
-              input.contextOffload,
-              input.context.sessionId,
-            ),
-          }
-        : {}),
-      ...(!input.contextOffload && input.contextOffloadUnavailable
-        ? { readImageSnapshotsUnavailable: true }
-        : {}),
-    };
     return new HostAiSdkBackend(
       {
         sessionId: input.context.sessionId,
@@ -396,8 +408,7 @@ async function buildHostAiSdkBackend(
         ...(input.context.recordInjection
           ? { recordInjection: input.context.recordInjection }
           : {}),
-        readExecutionBoundary: () =>
-          input.context.store.readExecutionBoundary(input.context.sessionId),
+        readExecutionBoundary,
         injections: new SessionInjections({
           sessionId: input.context.sessionId,
           ...(hostTimeZone() ? { timeZone: hostTimeZone()! } : {}),
@@ -439,15 +450,32 @@ async function buildHostAiSdkBackend(
           target.model,
           modelOverride(target.connection, target.model)?.vision,
         ),
+        // Only profiles with file tools get paths. WorkHub uses the same Read
+        // implementation under its narrower shared execution boundary.
+        ...(resolveFilePath ? { resolveFilePath } : {}),
+        ...(resolveFilePath &&
+        viewRoot &&
+        input.executionArtifacts.transferredFileRefs &&
+        input.executionArtifacts.restoreSessionFiles
+          ? {
+              prepareFileEnvironment: createHostFileEnvironmentPreparation({
+                viewRoot,
+                resolve: resolveFilePath,
+                readBoundary: readExecutionBoundary,
+                restoreSessionFiles: () =>
+                  input.executionArtifacts.restoreSessionFiles!(input.context.sessionId),
+                transferredFileRefs: () =>
+                  input.executionArtifacts.transferredFileRefs!(input.context.sessionId),
+              }),
+            }
+          : {}),
         readAttachmentBytes: createAttachmentByteReader({
           artifactStore: input.artifacts,
           sessionId: input.context.sessionId,
-          ...imageSnapshots,
         }),
         readAttachmentSize: createAttachmentSizeReader({
           artifactStore: input.artifacts,
           sessionId: input.context.sessionId,
-          ...imageSnapshots,
         }),
         prepareDurableProjectionArtifact: ({ turnId, bytes, mediaType }) =>
           planProjectionImage({

@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, test } from 'node:test';
 import { Worker } from 'node:worker_threads';
+import { installCurrentArtifactFixture } from './fixtures/current-artifact-scope.js';
 import {
   createOperationalStateBackup,
   restoreOperationalStateBackup,
@@ -665,7 +666,7 @@ describe('Work Board store', () => {
     });
   });
 
-  test('migrates a real workflow schema 8 database through event-only version 10', async () => {
+  test('migrates isolated workflow schema 8 with the current resource schema', async () => {
     const base = await mkdtemp(join(tmpdir(), 'maka-work-board-schema8-'));
     const stateRoot = join(base, 'state');
     const databasePath = join(stateRoot, 'runtime.sqlite');
@@ -687,6 +688,7 @@ describe('Work Board store', () => {
         // it keeps the fixture focused on the workflow 8 -> current upgrade while
         // leaving every released table and row otherwise intact.
         v8.exec('DELETE FROM automation_definitions; DELETE FROM automation_pending_fires;');
+        installCurrentArtifactFixture(v8);
         v8.prepare(
           "UPDATE operational_schema_migrations SET version = 8 WHERE scope = 'workflow'",
         ).run();

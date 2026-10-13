@@ -18,6 +18,7 @@
  */
 
 import { z } from 'zod';
+import { storeTerminalOutput } from './stored-tool-output.js';
 import { jsonSchema, zodSchema } from 'ai';
 import {
   encodedTerminalInputActionsByteLength,
@@ -56,13 +57,12 @@ import {
   throwIfShellSetupFailed,
   type TurnShellPlan,
 } from './shell-detect.js';
-import { boundTerminalResultInline } from './bash-output-limits.js';
+import { boundTerminalResultInline, type ProducedTerminalResult } from './bash-output-limits.js';
 import {
   DEFAULT_BASH_TIMEOUT_MS,
   MAX_PTY_COLS,
   MAX_PTY_ROWS,
   MAX_FOREGROUND_BASH_TIMEOUT_MS,
-  MAX_SHELL_RUN_RESOURCE_REF_CHARS,
   MAX_SHELL_RUN_TIMEOUT_MS,
   MAX_WRITE_STDIN_ACTIONS,
   MAX_WRITE_STDIN_INPUT_BYTES,
@@ -71,7 +71,6 @@ import {
   type BackgroundTaskStopper,
   type PtyControlWriter,
   type ShellRunBashInput,
-  isShellRunResourceRef,
   isWellFormedTerminalInput,
 } from './shell-run-contract.js';
 import type { ChildFdInput } from './child-fd-input.js';
@@ -173,7 +172,7 @@ type TerminalToolResult = Extract<ToolResultContent, { kind: 'terminal' }>;
 type ShellRunToolResult = Extract<ToolResultContent, { kind: 'shell_run' }>;
 
 export interface ShellRunLauncher {
-  runForegroundBash(input: ShellRunBashInput): Promise<TerminalToolResult>;
+  runForegroundBash(input: ShellRunBashInput): Promise<ProducedTerminalResult>;
   runBackgroundBash(input: ShellRunBashInput): Promise<ShellRunToolResult>;
 }
 
@@ -344,7 +343,7 @@ export function buildManagedBashTool(
     description: bashToolDescription(shell, [
       ...(options.lead ? [`- ${options.lead}`] : []),
       `- Foreground is the default: the command runs to completion and the result is what it printed. A failure leads with an \`Exit code N\` line; a command that printed nothing returns "(no output)".`,
-      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It keeps running across turns and re-invokes you when it exits. No \`&\` needed. It returns an ID and a file its output is written to: read that file to see what it printed, and end it with TaskStop. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
+      `- Set \`run_in_background: true\` for a command that should keep running as a tracked task — a dev server, a watcher, a long build. It keeps running across turns and re-invokes you when it exits. No \`&\` needed. It returns a task ID and a saved output file: use its current file path with Read(file_path), Grep or Bash to see output, and TaskStop with the task ID to end it. Background runs have no default timeout (maximum explicit timeout ${MAX_SHELL_RUN_TIMEOUT_MS}ms).`,
       '- Set `pty: true` together with `run_in_background: true` only when the command needs terminal semantics or later keystrokes. A terminal task has a live screen rather than a log, so it writes no output file: send keystrokes with TaskInput on the returned ID and read the screen it answers with.',
       '- `description` is what the user reads in place of the raw command.',
       ...(declareSandboxBoundary ? ['- Enforced by the current session sandbox boundary.'] : []),
@@ -386,7 +385,7 @@ export function buildManagedBashTool(
           ? undefined
           : clampHostForegroundTimeout(options.defaultTimeoutMs?.(command)));
       try {
-        const result = await shellRuns[
+        const launched = await shellRuns[
           run_in_background ? 'runBackgroundBash' : 'runForegroundBash'
         ]({
           sessionId: ctx.sessionId,
@@ -406,6 +405,9 @@ export function buildManagedBashTool(
           ...(transformed?.sandboxType ? { sandboxType: transformed.sandboxType } : {}),
           ...(onCompletion ? { onCompletion } : {}),
         });
+        // The command has already run. Retain its execution status even if
+        // output persistence fails; the preview remains explicitly truncated.
+        const result = await storeTerminalOutput(launched, ctx);
         if (result.kind === 'terminal' || !isActiveShellRunStatus(result.status)) {
           onCompletion?.({
             successful: result.status === 'completed' && result.exitCode === 0,

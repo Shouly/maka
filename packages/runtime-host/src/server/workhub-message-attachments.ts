@@ -46,7 +46,7 @@ export async function copyWorkHubAttachmentsToTarget(
     includeArtifactIds: ids,
   });
   return attachments.map((attachment, index) => {
-    const relativePath = copied.artifactIds.get(ids[index]!);
+    const relativePath = copied.artifactIds.has(ids[index]!) ? ids[index]! : undefined;
     if (!relativePath)
       throw new WorkHubActionEffectFailure(
         'operation_conflict',

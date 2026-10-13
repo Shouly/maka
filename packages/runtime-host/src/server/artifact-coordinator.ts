@@ -399,7 +399,9 @@ export class HostArtifactCoordinator {
             kind: 'artifact',
             sessionId: input.sessionId,
             revision: entry.revision,
-            artifact: entry.record ? encodeArtifactProjection(entry.record) : null,
+            artifact: entry.record
+              ? { ...encodeArtifactProjection(entry.record), id: input.artifactId }
+              : null,
           }),
         );
       }

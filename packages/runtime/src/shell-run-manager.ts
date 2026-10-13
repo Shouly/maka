@@ -49,12 +49,7 @@ import { buildPtyShellSpawnPlan, buildShellSpawnPlan, defaultShellPlan } from '.
 import { PipeProcessDriver, type PipeProcessExit } from './pipe-process-driver.js';
 import { PipeTailCollector } from './pipe-tail-collector.js';
 import { PtyProcessDriver, type PtyProcessExit } from './pty-process-driver.js';
-import {
-  PTY_INITIAL_COLS,
-  PTY_INITIAL_ROWS,
-  PtyScreenCollector,
-  type PtySnapshotAtCut,
-} from './pty-screen-collector.js';
+import { PTY_INITIAL_COLS, PTY_INITIAL_ROWS, PtyScreenCollector } from './pty-screen-collector.js';
 import { loadPtyStack, type PtyStack } from './pty-stack.js';
 import {
   DEFAULT_BASH_TIMEOUT_MS,
@@ -83,6 +78,7 @@ import {
   BASH_MAX_OUTPUT_BYTES,
   BASH_SAVED_PREVIEW_CHARS,
   boundTerminalResult,
+  type ProducedTerminalResult,
 } from './bash-output-limits.js';
 import { ShellOutputSpool } from './shell-output-spool.js';
 import { toolResultFilePath } from './tool-result-file.js';
@@ -94,7 +90,6 @@ import {
   shellRunUpdate,
   terminalContent,
   type ShellRunToolResult,
-  type TerminalToolResult,
 } from './shell-run-tool-result.js';
 import { CompletionLatch } from './completion-latch.js';
 import { closeChildFdSources } from './child-fd-input.js';
@@ -357,7 +352,7 @@ export class ShellRunProcessManager
     }
   }
 
-  async runForegroundBash(input: ShellRunBashInput): Promise<TerminalToolResult> {
+  async runForegroundBash(input: ShellRunBashInput): Promise<ProducedTerminalResult> {
     const onCompletion = onceShellRunCompletion(input.onCompletion);
     const ownedInput = onCompletion ? { ...input, onCompletion } : input;
     let live: LiveShellRun | undefined;
@@ -1898,7 +1893,7 @@ export class ShellRunProcessManager
   private async foregroundResult(
     live: LiveShellRun,
     record: ShellRunRecord,
-  ): Promise<TerminalToolResult> {
+  ): Promise<ProducedTerminalResult> {
     const content = terminalContent(await this.markObserved(record));
     const spool = live.mode === 'pipes' ? live.spool : undefined;
     const root = this.input.toolResultRoot;
@@ -1993,7 +1988,9 @@ export class ShellRunProcessManager
    */
   private mirrorOutputFile(record: ShellRunRecord): Promise<void> {
     if (record.outputFile === undefined) return Promise.resolve();
-    return writeShellRunOutputFile(record).catch(() => undefined);
+    return writeShellRunOutputFile(record)
+      .then(() => this.input.onTaskOutputUpdated?.(record))
+      .catch(() => undefined);
   }
 
   /** Mirror a record on its way through, for the paths that return one. */

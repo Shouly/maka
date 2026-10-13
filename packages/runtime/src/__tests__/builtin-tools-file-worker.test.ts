@@ -51,7 +51,7 @@ describe('builtin file tools use the sandboxed worker', () => {
   });
 
   for (const kind of ['bypass', 'external'] as const) {
-    test(`uses the host filesystem path for an authoritative ${kind} boundary`, async () => {
+    test(`a ${kind} boundary ${kind === 'bypass' ? 'uses Host paths' : 'requires an external executor'}`, async () => {
       const cwd = await temporaryDirectory(`maka-file-${kind}-`);
       let workerCalled = false;
       const tools = buildBuiltinTools({
@@ -65,22 +65,32 @@ describe('builtin file tools use the sandboxed worker', () => {
       const tool = tools.find((candidate) => candidate.name === 'Write');
       if (!tool) throw new Error('Write tool missing');
 
-      await tool.impl(
-        { file_path: 'written.txt', content: kind },
-        {
-          sessionId: 'session-1',
-          turnId: 'turn-1',
-          toolCallId: `tool-${kind}`,
-          cwd,
-          permissionMode: 'explore',
-          executionBoundary: { kind, revision: 1 },
-          abortSignal: new AbortController().signal,
-          emitOutput: () => {},
-        },
-      );
+      const execute = async () =>
+        tool.impl(
+          { file_path: 'written.txt', content: kind },
+          {
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            toolCallId: `tool-${kind}`,
+            cwd,
+            permissionMode: 'explore',
+            executionBoundary: { kind, revision: 1 },
+            abortSignal: new AbortController().signal,
+            emitOutput: () => {},
+          },
+        );
 
+      if (kind === 'external') {
+        await assert.rejects(
+          execute,
+          /External filesystem execution requires an external workspace executor/,
+        );
+        await assert.rejects(readFile(join(cwd, 'written.txt')), { code: 'ENOENT' });
+      } else {
+        await execute();
+        assert.equal(await readFile(join(cwd, 'written.txt'), 'utf8'), kind);
+      }
       assert.equal(workerCalled, false);
-      assert.equal(await readFile(join(cwd, 'written.txt'), 'utf8'), kind);
     });
   }
 
@@ -178,9 +188,9 @@ describe('builtin file tools use the sandboxed worker', () => {
       snapshotImage: async (input) => {
         snapshotOwnerId = input.ownerId;
         return {
-          kind: 'session_context',
+          kind: 'session_file',
           sessionId: 'session-1',
-          refId: 'context-1',
+          relativePath: 'image-1',
         };
       },
       sandboxPlatform: 'darwin',
@@ -193,29 +203,9 @@ describe('builtin file tools use the sandboxed worker', () => {
     assert.equal(snapshotOwnerId, 'toolop-Read');
   });
 
-  test('releases a Read image snapshot when durable result commit fails', async () => {
-    const released: Array<{ sessionId: string; refId: string }> = [];
-    const read = buildBuiltinTools({
-      releaseImageSnapshot: async (input) => {
-        released.push(input);
-      },
-    }).find((candidate) => candidate.name === 'Read');
-    if (!read?.compensateDurableOutcomeCommitFailure) {
-      throw new Error('Read image compensation missing');
-    }
-
-    await read.compensateDurableOutcomeCommitFailure({
-      result: {
-        kind: 'image',
-        mimeType: 'image/png',
-        ref: { kind: 'session_context', sessionId: 'session-1', refId: 'context-1' },
-      },
-      isError: false,
-      sessionId: 'session-1',
-      operationId: 'toolop-Read',
-    });
-
-    assert.deepEqual(released, [{ sessionId: 'session-1', refId: 'context-1' }]);
+  test('Read does not delete shared immutable image observations on a receipt failure', () => {
+    const read = buildBuiltinTools().find((candidate) => candidate.name === 'Read')!;
+    assert.equal(read.compensateDurableOutcomeCommitFailure, undefined);
   });
 
   test('refuses to snapshot a Read image without a durable operation identity', async () => {

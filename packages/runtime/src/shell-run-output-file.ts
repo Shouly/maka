@@ -19,11 +19,11 @@
 
 // Where a background command's output goes while it runs.
 //
-// The model reads it with Read, as an ordinary file: a task is something it
-// started, not a kind of thing Read has to know about. The file carries what
-// the command printed and, last, how it stands — `[running]` until it ends,
-// then the line that says how it ended.
+// The model uses a Session-scoped task-output ref with Read. This private file
+// mirrors what the command printed and, last, how it stands — `[running]` until
+// it ends. Reads and snapshots join the writer queue to observe a whole revision.
 
+import { readOutputSnapshot } from './stored-tool-output.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { TASK_OUTPUTS_DIRECTORY } from '@maka/core/saved-output-paths';
@@ -45,9 +45,9 @@ function segment(value: string, what: string): string {
 
 /**
  * Where background command output is written, one folder per Session:
- * `<stateRoot>/tasks`. The Host's state root, for the reason saved tool
- * results are kept there: every permission profile reads it, and none but
- * bypass writes it. Session ids are unique, so one root serves every Session.
+ * `<stateRoot>/tasks`. Only the Host resource service resolves this locator;
+ * the model receives a task-output ref. Session ids are unique, so one root
+ * serves every Session.
  */
 export function taskOutputRoot(stateRoot: string): string {
   return join(stateRoot, TASK_OUTPUTS_DIRECTORY);
@@ -157,6 +157,28 @@ export function writeShellRunOutputFile(record: ShellRunRecord): Promise<void> {
     });
   void settled;
   return chain;
+}
+
+/** Each read/search observes one complete revision, never a partially rewritten log. */
+export function withShellRunOutputFile<T>(
+  path: string,
+  operation: (path: string) => Promise<T>,
+): Promise<T> {
+  const current = writers.get(path);
+  const read = (current?.chain ?? Promise.resolve()).then(() => operation(path));
+  const chain = read.then(
+    () => undefined,
+    () => undefined,
+  );
+  writers.set(path, { chain, revision: current?.revision ?? written.get(path) ?? 0 });
+  void chain.then(() => {
+    if (writers.get(path)?.chain === chain) writers.delete(path);
+  });
+  return read;
+}
+
+export function readShellRunOutputSnapshot(path: string): Promise<Uint8Array> {
+  return withShellRunOutputFile(path, readOutputSnapshot);
 }
 
 /** Drop every task output of a Session, when the Session itself is retired. */

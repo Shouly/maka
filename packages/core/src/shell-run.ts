@@ -141,7 +141,7 @@ export interface ShellRunRecord {
   failureMessage?: string;
   /** Handed to the model as an id (Bash run_in_background); its finish is announced. */
   background?: true;
-  /** Where this run's output is being written for the model to read. */
+  /** Host-private operational locator; never expose it in model or client tool results. */
   outputFile?: string;
   /** What the model said the command does — the notification's summary names it. */
   description?: string;

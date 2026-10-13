@@ -20,8 +20,10 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
+import { stableJsonStringify } from '@maka/core/canonical-json';
 import { test } from 'node:test';
 import {
   OPERATIONAL_STATE_DATABASE_NAME,
@@ -93,16 +95,7 @@ function openDatabase(workspaceRoot: string, readOnly = false): DatabaseSync {
   });
 }
 
-/**
- * A real artifact row.
- *
- * The metadata codec is strict, and deliberately so: the record carries an
- * exact key set, and `relativePath` must equal `<sessionId>/<id>-<name>`. That
- * equality is what keeps a record from naming a file outside its own Session,
- * and it is why the export can trust these paths. A fixture that hand-rolls a
- * looser shape decodes to nothing, and then an artifact test proves only that
- * the export copied no artifacts.
- */
+/** Seed canonical immutable resource metadata and a separate Session membership. */
 async function addArtifactRecord(
   workspaceRoot: string,
   sessionId: string,
@@ -110,28 +103,33 @@ async function addArtifactRecord(
   options: { bytes?: string; name?: string } = {},
 ): Promise<string> {
   const name = options.name ?? 'artifact.txt';
-  const relativePath = `${sessionId}/${artifactId}-${name}`;
+  const hash = createHash('sha256')
+    .update(options.bytes ?? '')
+    .digest('hex');
+  const relativePath = `blobs/sha256/${hash.slice(0, 2)}/${hash}`;
   const record = {
     id: artifactId,
-    sessionId,
     turnId: 'turn-1',
     createdAt: 0,
     name,
     kind: 'file',
     relativePath,
-    sizeBytes: options.bytes?.length ?? 0,
+    sizeBytes: options.bytes === undefined ? 0 : Buffer.byteLength(options.bytes, 'utf8'),
     source: 'tool_result',
   };
   const db = openDatabase(workspaceRoot);
   try {
     if (options.bytes !== undefined) {
-      await mkdir(join(workspaceRoot, 'artifacts', sessionId), { recursive: true });
+      await mkdir(dirname(join(workspaceRoot, 'artifacts', relativePath)), { recursive: true });
       await writeFile(join(workspaceRoot, 'artifacts', relativePath), options.bytes);
     }
-    db.prepare(`
-      INSERT INTO artifact_records(artifact_id, session_id, created_at, relative_path, record_json)
-      VALUES (?, ?, 0, ?, ?)
-    `).run(artifactId, sessionId, relativePath, JSON.stringify(record));
+    db.prepare(
+      'INSERT INTO artifact_objects(artifact_id, relative_path, size_bytes, created_at, record_json) VALUES (?, ?, ?, 0, ?)',
+    ).run(artifactId, relativePath, record.sizeBytes, stableJsonStringify(record));
+    db.prepare('INSERT INTO artifact_records(artifact_id, session_id) VALUES (?, ?)').run(
+      artifactId,
+      sessionId,
+    );
   } finally {
     db.close();
   }
@@ -264,6 +262,14 @@ test(
         count?: unknown;
       };
       assert.equal(Number(row.count), 1);
+      assert.deepEqual(
+        exported
+          .prepare('SELECT artifact_id FROM artifact_objects')
+          .all()
+          .map((row) => row.artifact_id),
+        ['live'],
+      );
+      assert.deepEqual(exported.prepare('PRAGMA foreign_key_check').all(), []);
     } finally {
       exported.close();
     }
@@ -906,39 +912,18 @@ test(
   withRoot('maka-session-export-ancestor-symlink', async (root, workspaceRoot) => {
     const { mkdir: makeDir, symlink, writeFile: write } = await import('node:fs/promises');
     const sessionId = await createSession(workspaceRoot);
-    // A record that decodes perfectly, whose bytes live outside the workspace
-    // because the Session's artifact directory is a link. Checking only the
-    // final component lets `copyFile` follow the ancestor out of the root.
+    // Valid CAS metadata must not let export follow a symlinked Blob ancestor.
     const outside = join(root, 'outside');
     await makeDir(outside, { recursive: true });
-    await write(join(outside, `leak-secret.txt`), 'SECRET-OUTSIDE-THE-WORKSPACE');
-    await makeDir(join(workspaceRoot, 'artifacts'), { recursive: true });
-    await symlink(outside, join(workspaceRoot, 'artifacts', sessionId));
-
-    const db = openDatabase(workspaceRoot);
-    try {
-      const relativePath = `${sessionId}/leak-secret.txt`;
-      db.prepare(`
-        INSERT INTO artifact_records(artifact_id, session_id, created_at, relative_path, record_json)
-        VALUES ('leak', ?, 0, ?, ?)
-      `).run(
-        sessionId,
-        relativePath,
-        JSON.stringify({
-          id: 'leak',
-          sessionId,
-          turnId: 'turn-1',
-          createdAt: 0,
-          name: 'secret.txt',
-          kind: 'file',
-          relativePath,
-          sizeBytes: 28,
-          source: 'tool_result',
-        }),
-      );
-    } finally {
-      db.close();
-    }
+    const content = 'SECRET-OUTSIDE-THE-WORKSPACE';
+    const relativePath = await addArtifactRecord(workspaceRoot, sessionId, 'leak', {
+      bytes: content,
+      name: 'secret.txt',
+    });
+    const path = join(workspaceRoot, 'artifacts', relativePath);
+    await write(join(outside, relativePath.split('/').at(-1)!), content);
+    await rm(dirname(path), { recursive: true });
+    await symlink(outside, dirname(path));
 
     const destination = join(root, 'bundle.maka-session');
     const result = await exportSessionBundle({ workspaceRoot, sessionId, destination });

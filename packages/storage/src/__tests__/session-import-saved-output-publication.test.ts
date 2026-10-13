@@ -67,7 +67,7 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>): Promise<vo
     } finally {
       await sessions.close?.();
     }
-    const sourceFolder = join(bundleStateRoot, 'tool-results', sessionId);
+    const sourceFolder = join(bundleStateRoot, 'tasks', sessionId);
     await mkdir(sourceFolder, { recursive: true });
     await run({
       base,
@@ -75,7 +75,7 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>): Promise<vo
       stateRoot,
       sessionId,
       sourceFolder,
-      targetFolder: join(stateRoot, 'tool-results', sessionId),
+      targetFolder: join(stateRoot, 'tasks', sessionId),
     });
   } finally {
     await rm(base, { recursive: true, force: true });
@@ -84,28 +84,31 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>): Promise<vo
 
 test('saved outputs publish privately and an identical file left before import is accepted', async () => {
   await withFixture(async (fixture) => {
-    await writeFile(join(fixture.sourceFolder, 'existing.txt'), 'existing');
-    await writeFile(join(fixture.sourceFolder, 'new.txt'), 'complete output');
+    await writeFile(join(fixture.sourceFolder, 'existing.output'), 'existing');
+    await writeFile(join(fixture.sourceFolder, 'new.output'), 'complete output');
     await mkdir(fixture.targetFolder, { recursive: true, mode: 0o700 });
-    const existing = join(fixture.targetFolder, 'existing.txt');
+    const existing = join(fixture.targetFolder, 'existing.output');
     await writeFile(existing, 'existing', { mode: 0o600 });
     const before = await stat(existing);
     const result = await importSessionBundleState(fixture);
     assert.deepEqual(result.sessionIds, [fixture.sessionId]);
     assert.equal((await stat(existing)).ino, before.ino);
-    const saved = join(fixture.targetFolder, 'new.txt');
+    const saved = join(fixture.targetFolder, 'new.output');
     assert.equal(await readFile(saved, 'utf8'), 'complete output');
-    assert.deepEqual((await readdir(fixture.targetFolder)).sort(), ['existing.txt', 'new.txt']);
+    assert.deepEqual((await readdir(fixture.targetFolder)).sort(), [
+      'existing.output',
+      'new.output',
+    ]);
     if (process.platform !== 'win32') assert.equal((await stat(saved)).mode & 0o777, 0o600);
   });
 });
 
 test('a later database failure removes only newly published outputs and a retry succeeds', async () => {
   await withFixture(async (fixture) => {
-    await writeFile(join(fixture.sourceFolder, 'existing.txt'), 'existing');
-    await writeFile(join(fixture.sourceFolder, 'new.txt'), 'complete output');
+    await writeFile(join(fixture.sourceFolder, 'existing.output'), 'existing');
+    await writeFile(join(fixture.sourceFolder, 'new.output'), 'complete output');
     await mkdir(fixture.targetFolder, { recursive: true });
-    const existing = join(fixture.targetFolder, 'existing.txt');
+    const existing = join(fixture.targetFolder, 'existing.output');
     await writeFile(existing, 'existing');
     const database = new DatabaseSync(join(fixture.bundleStateRoot, 'runtime.sqlite'));
     try {
@@ -117,7 +120,7 @@ test('a later database failure removes only newly published outputs and a retry 
         .run(fixture.sessionId);
       await assert.rejects(importSessionBundleState(fixture), { code: 'conflict' });
       assert.equal(await readFile(existing, 'utf8'), 'existing');
-      await assert.rejects(lstat(join(fixture.targetFolder, 'new.txt')), { code: 'ENOENT' });
+      await assert.rejects(lstat(join(fixture.targetFolder, 'new.output')), { code: 'ENOENT' });
       const target = new DatabaseSync(join(fixture.stateRoot, 'runtime.sqlite'), {
         readOnly: true,
       });
@@ -129,7 +132,7 @@ test('a later database failure removes only newly published outputs and a retry 
       database.prepare('DELETE FROM core_agent_run_events WHERE event_id = ?').run('orphan');
       await importSessionBundleState(fixture);
       assert.equal(
-        await readFile(join(fixture.targetFolder, 'new.txt'), 'utf8'),
+        await readFile(join(fixture.targetFolder, 'new.output'), 'utf8'),
         'complete output',
       );
     } finally {
@@ -140,12 +143,12 @@ test('a later database failure removes only newly published outputs and a retry 
 
 test('a conflicting saved output is preserved and no Session is published', async () => {
   await withFixture(async (fixture) => {
-    await writeFile(join(fixture.sourceFolder, 'result.txt'), 'incoming');
+    await writeFile(join(fixture.sourceFolder, 'result.output'), 'incoming');
     await mkdir(fixture.targetFolder, { recursive: true });
-    await writeFile(join(fixture.targetFolder, 'result.txt'), 'existing different bytes');
+    await writeFile(join(fixture.targetFolder, 'result.output'), 'existing different bytes');
     await assert.rejects(importSessionBundleState(fixture), { code: 'conflict' });
     assert.equal(
-      await readFile(join(fixture.targetFolder, 'result.txt'), 'utf8'),
+      await readFile(join(fixture.targetFolder, 'result.output'), 'utf8'),
       'existing different bytes',
     );
     const database = new DatabaseSync(join(fixture.stateRoot, 'runtime.sqlite'), {
@@ -162,12 +165,11 @@ test('a conflicting saved output is preserved and no Session is published', asyn
 for (const kind of ['root', 'session'] as const) {
   test(`saved output import refuses a ${kind} directory linked outside the state root`, async () => {
     await withFixture(async (fixture) => {
-      await writeFile(join(fixture.sourceFolder, 'result.txt'), 'incoming');
+      await writeFile(join(fixture.sourceFolder, 'result.output'), 'incoming');
       const outside = join(fixture.base, 'outside');
       await mkdir(outside);
-      const linkPath =
-        kind === 'root' ? join(fixture.stateRoot, 'tool-results') : fixture.targetFolder;
-      if (kind === 'session') await mkdir(join(fixture.stateRoot, 'tool-results'));
+      const linkPath = kind === 'root' ? join(fixture.stateRoot, 'tasks') : fixture.targetFolder;
+      if (kind === 'session') await mkdir(join(fixture.stateRoot, 'tasks'));
       await symlink(outside, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
       await assert.rejects(importSessionBundleState(fixture), /escapes the Storage Root/u);
       assert.deepEqual(await readdir(outside), []);

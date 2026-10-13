@@ -86,6 +86,8 @@ export interface ShellRunProcessManagerInput {
    * (tests, embedded runs); those simply write no file.
    */
   taskOutputRoot?: string;
+  /** Refresh already-exposed execution views after the private log is mirrored. */
+  onTaskOutputUpdated?: (record: ShellRunRecord) => Promise<void>;
   /**
    * Directory a foreground command's output is saved under when it is too
    * long to show, one folder per Session. Absent, nothing is saved and a long

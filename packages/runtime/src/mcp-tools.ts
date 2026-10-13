@@ -19,7 +19,8 @@
 
 import { createHash } from 'node:crypto';
 import { jsonSchema } from 'ai';
-import type { ToolActivityKind } from '@maka/core/events';
+import { storeToolOutput } from './stored-tool-output.js';
+import type { TerminalSavedOutput, ToolActivityKind, ToolResultContent } from '@maka/core/events';
 import type {
   McpCallResult,
   McpToolBinding,
@@ -36,15 +37,10 @@ import type { ToolResultContentPart, ToolResultOutput } from './model-protocol.j
 import {
   estimateTextTokens,
   formatCount,
-  newToolResultFileName,
-  saveToolResultText,
   savedToolResultNotice,
-  toolResultFilePath,
-  toolResultSaveTicket,
   truncateUtf8,
-  type SavedToolResult,
 } from './tool-result-file.js';
-import type { MakaTool } from './tool-runtime.js';
+import type { MakaTool, MakaToolContext } from './tool-runtime.js';
 
 const MAX_PROVIDER_TOOL_NAME = 64;
 const HASH_CHARS = 10;
@@ -109,11 +105,6 @@ export interface BuildMcpToolsOptions {
   recoveryMode?: ToolRecoveryMode;
   executionLocation?: 'host' | 'remote';
   activityKindForDescriptor?: (descriptor: McpToolDescriptor) => ToolActivityKind | undefined;
-  /**
-   * Directory a result too long to show is saved under, one folder per
-   * Session. Absent, nothing is saved and the result's text is cut instead.
-   */
-  toolResultRoot?: string;
 }
 
 export interface McpIdentifiedTool {
@@ -179,7 +170,6 @@ export function buildMcpToolsWithIdentities(
                 });
                 return {
                   execute: async (executionContext) => {
-                    const ticket = toolResultSaveTicket();
                     return boundMcpResult(
                       await prepared.execute({
                         ...(executionContext.emitProgress
@@ -192,9 +182,11 @@ export function buildMcpToolsWithIdentities(
                             }
                           : {}),
                       }),
-                      options.toolResultRoot,
-                      { sessionId: context.sessionId, origin: executionContext.origin },
-                      ticket,
+                      {
+                        sessionId: context.sessionId,
+                        origin: executionContext.origin,
+                        recordArtifacts: executionContext.recordArtifacts,
+                      },
                     );
                   },
                   cancel: () => prepared.cancel(),
@@ -203,7 +195,6 @@ export function buildMcpToolsWithIdentities(
             }
           : {}),
         impl: async (args: unknown, context) => {
-          const ticket = toolResultSaveTicket();
           // Managed network authority applies equally to Direct and nested CodeMode dispatch.
           if (
             options.executionLocation !== 'remote' &&
@@ -240,7 +231,7 @@ export function buildMcpToolsWithIdentities(
                 }
               : {}),
           });
-          return boundMcpResult(result, options.toolResultRoot, context, ticket);
+          return boundMcpResult(result, context);
         },
         toModelOutput: ({ output }) => mcpResultToModelOutput(output),
       } satisfies MakaTool,
@@ -295,12 +286,9 @@ function asArguments(value: unknown): Record<string, unknown> {
  */
 async function boundMcpResult(
   result: McpCallResult,
-  root: string | undefined,
-  context: { readonly sessionId: string; readonly origin?: 'provider' | 'code_mode' },
-  /** Taken when the call started: a Session retired since gets no file. */
-  ticket: number,
-): Promise<McpCallResult> {
-  if (root === undefined || context.origin === 'code_mode') return result;
+  context: Pick<MakaToolContext, 'sessionId' | 'origin' | 'recordArtifacts'>,
+): Promise<McpCallResult | Extract<ToolResultContent, { kind: 'json' }>> {
+  if (!context.recordArtifacts || context.origin === 'code_mode') return result;
   const blocks = Array.isArray(result.content) ? result.content : [];
   if (blocks.some((block) => block.type === 'image')) return result;
   const text = mcpResultToModelOutput(result, {
@@ -314,21 +302,21 @@ async function boundMcpResult(
   }
   const file = mcpResultFileText(result);
   try {
-    const saved = await saveToolResultText(
-      toolResultFilePath(root, context.sessionId, newToolResultFileName()),
-      file.text,
-      ticket,
-    );
+    const saved = await storeToolOutput(context, file.text);
     const notice =
       file.complete || saved.truncated ? savedToolResultNotice(saved) : partialFileNotice(saved);
-    return { content: [{ type: 'text', text: notice }] };
+    return {
+      kind: 'json',
+      value: { content: [{ type: 'text', text: notice }] },
+      fileRefs: [saved.ref],
+    };
   } catch {
     return result;
   }
 }
 
-function partialFileNotice(saved: SavedToolResult): string {
-  return `Output too long to show, and not all of it could be saved: ${saved.path} holds ${formatCount(saved.chars)} characters of it, and a line in the file marks what was left out. Read it with Read or search it with Grep.`;
+function partialFileNotice(saved: TerminalSavedOutput): string {
+  return `Output too long to show, and not all of it could be saved: ${saved.ref} holds ${formatCount(saved.chars)} characters of it, and a line in the file marks what was left out. Read it with Read or search it with Grep.`;
 }
 
 /**
@@ -396,7 +384,8 @@ function mcpResultToModelOutput(
     summarizedBlocks: MAX_SUMMARIZED_BLOCKS,
   },
 ): Extract<ToolResultOutput, { type: 'content' }> {
-  const result = output as Partial<McpCallResult>;
+  const wrapped = output as { kind?: unknown; value?: unknown } | null;
+  const result = (wrapped?.kind === 'json' ? wrapped.value : output) as Partial<McpCallResult>;
   const blocks = Array.isArray(result.content) ? result.content : [];
   const value: ToolResultContentPart[] = [];
   const nonVisual: unknown[] = [];

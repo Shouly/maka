@@ -32,51 +32,36 @@ import {
   clientCapabilityConnectionIdentity,
   clientCapabilityCoordinatorTestAdmission,
 } from './fixtures/client-capability.js';
-import {
-  createBypassExecutionBoundary,
-  createManagedExecutionBoundary,
-  type ExecutionBoundary,
-} from '@maka/core/sandbox-boundary';
+import { createBypassExecutionBoundary, type ExecutionBoundary } from '@maka/core/sandbox-boundary';
 import { PROVIDER_REGISTRY } from '@maka/core/llm-connections';
-import { createWorkspaceWritePermissionProfile } from '@maka/core/permission-profile';
-import {
-  decodeRequestCompositionSnapshot,
-  decodeRunCompositionSnapshot,
-} from '@maka/core/run-composition';
+import { decodeRunCompositionSnapshot } from '@maka/core/run-composition';
 import { readInvocation, testInvocationRecord } from '@maka/runtime/test-only/invocation-fixture';
 import { WORKHUB_COORDINATION_SESSION_ID, type SessionUserContext } from '@maka/core/session';
 import { messageContentDigest } from '@maka/core/events';
 import { runtimeInvocationOutcome } from '@maka/core/runtime-invocation';
-import { agentRunCompositionFromEvents } from '@maka/core/agent-run';
 import type { BackendCompactHistoryInput } from '@maka/core/backend-types';
-import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
 import { type ModelCallAttempt, type ModelCallKind } from '@maka/core/model-call-attempt';
 import { type RuntimeEvent } from '@maka/core/runtime-event';
 import { createDefaultRuntimePolicy } from '@maka/core/runtime-policy';
-import type { PlanSessionState, PlanStore } from '@maka/core/plan';
 import type { SessionTaskToolStore } from '@maka/runtime/session-task-tools';
 import {
   serializeOAuthSubscriptionTokens,
   type OAuthSubscriptionTokens,
 } from '@maka/runtime/subscription-credentials';
 import { type BackendFactoryContext } from '@maka/runtime/session-manager';
-import { type AiSdkBackendInput, type RunTraceEvent } from '@maka/runtime/ai-sdk-backend';
-import { type FilesystemWorkerExecuteInput } from '@maka/runtime/filesystem-worker';
+import { type RunTraceEvent } from '@maka/runtime/ai-sdk-backend';
 import { type MakaTool, type MakaToolContext } from '@maka/runtime/tool-runtime';
 import {
   type ProxiedFetchProxy,
   type ProxiedFetchTransport,
 } from '@maka/runtime/network/scoped-fetch-transport';
 import { type ScannedSkill } from '@maka/runtime/skills';
-import { agentGraphIdForRootSession } from '@maka/runtime/stream-graph-coordinator';
 import { resolveTurnShellPlan, ShellPreferenceError } from '@maka/runtime/shell-detect';
 import { buildParentAgentTools } from '@maka/runtime/subagent-tools';
 import { SESSION_RECAP_INSTRUCTION } from '@maka/runtime/session-recap';
 import { loadHistoryCompactCheckpointsFromRunLedger } from '@maka/runtime/history-compact-ledger';
-import { stableHash, toolCatalogHash } from '@maka/runtime/request-shape';
-import { toolAvailabilityHash } from '@maka/runtime/tool-availability';
+import { stableHash } from '@maka/runtime/request-shape';
 import { createSqliteRuntimeStore } from '@maka/storage/sqlite-runtime-store';
-import { createAgentGraphControlStore } from '@maka/storage/agent-graph-control-store';
 import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
 import { openInteractiveExecutionStoresForWrite } from '@maka/storage/execution-stores';
 import {
@@ -153,8 +138,9 @@ const HEADLESS_CODING_V1_TOOLS_HASH =
   // and since 2026-09-24 so are Read's, Write's, Edit's and Grep's. ArchiveRead
   // left the list on 2026-10-03. On 2026-10-04 Read's description stated its
   // token limit and first-page answer in place of a line count, and that a
-  // first line too large to read alone is an error.
-  'sha256:7d75f134d0f3a5be8d1f24c8c42a4e825dd0fb31f4c7acafb5d1b4aae91cb196';
+  // first line too large to read alone is an error. File resources now prefer
+  // real execution paths and Read/Grep document that path-first interface.
+  'sha256:cfbcbc0f5410f3e5276749d9163fd9a758aa36574f3459902b34b59727d26186';
 const execFileAsync = promisify(execFile);
 test('backend creation resolves a bound Session by immutable Connection identity', async () => {
   let observedRef: unknown;

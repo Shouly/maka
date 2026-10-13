@@ -48,7 +48,10 @@ import type {
   DesktopSideConversationBranchResult,
   MakaBridge,
 } from '../../preload/bridge-contract.js';
-import type { DesktopSessionUpdateResult } from '../../shared/desktop-session-projection.js';
+import type {
+  DesktopSessionActionResult,
+  DesktopSessionUpdateResult,
+} from '../../shared/desktop-session-projection.js';
 import { requireNamespace, toUnsubscribe, tryNamespace } from './bridge.js';
 import { ExpectedOperationError } from './expected-operation-error.js';
 
@@ -66,7 +69,10 @@ export type SessionSubmitCommand = Parameters<Sessions['submitMessage']>[2];
 export type SessionSubmitPlacement = Parameters<Sessions['submitMessage']>[1];
 export type SessionSubmitResult = Awaited<ReturnType<Sessions['submitMessage']>>;
 export type SessionStopInput = NonNullable<Parameters<Sessions['stop']>[1]>;
-export type SessionRemovalResult = Awaited<ReturnType<Sessions['remove']>>;
+export type SessionRemovalResult = Extract<
+  Awaited<ReturnType<Sessions['remove']>>,
+  { ok: true }
+>['result'];
 export type SessionResumeResult = Awaited<ReturnType<Sessions['resumeLatest']>>;
 export type SessionResumeAvailability = Awaited<ReturnType<Sessions['queryResumeLatest']>>;
 export type SessionCompactResult = Awaited<ReturnType<Sessions['compact']>>;
@@ -92,18 +98,23 @@ export function createSession(input?: CreateSessionRequestInput): Promise<Deskto
   return sessions().create(input);
 }
 
-export function archiveSession(
-  sessionId: string,
-  options?: SessionRevisionFamilyOptions,
-): Promise<void> {
-  return sessions().archive(sessionId, options);
+function expectSessionAction<Result>(outcome: DesktopSessionActionResult<Result>): Result {
+  if (outcome.ok) return outcome.result;
+  throw new ExpectedOperationError(outcome.code);
 }
 
-export function unarchiveSession(
+export async function archiveSession(
   sessionId: string,
   options?: SessionRevisionFamilyOptions,
 ): Promise<void> {
-  return sessions().unarchive(sessionId, options);
+  return expectSessionAction(await sessions().archive(sessionId, options));
+}
+
+export async function unarchiveSession(
+  sessionId: string,
+  options?: SessionRevisionFamilyOptions,
+): Promise<void> {
+  return expectSessionAction(await sessions().unarchive(sessionId, options));
 }
 
 export function setSessionFlagged(
@@ -122,11 +133,11 @@ export function renameSession(
   return sessions().rename(sessionId, name, options);
 }
 
-export function removeSession(
+export async function removeSession(
   sessionId: string,
   options?: SessionRevisionFamilyOptions & { requireArchived?: boolean },
 ): Promise<SessionRemovalResult> {
-  return sessions().remove(sessionId, options);
+  return expectSessionAction(await sessions().remove(sessionId, options));
 }
 
 /** How many linked subtasks a delete would archive, per the Host's own plan. */

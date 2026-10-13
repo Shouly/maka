@@ -160,8 +160,12 @@ test('Agent and delivered file cards survive branch, edit resend and side conver
             'the five deliveries and only the notified child file are copied',
           );
           const copiedId = page.records.find((record) => record.name === `${REPORT}.txt`)!.id;
-          assert.notEqual(copiedId, REPORT);
-          assert.ok(notification.text.includes(`<artifacts>${copiedId}</artifacts>`));
+          assert.equal(copiedId, REPORT);
+          assert.ok(notification.text.includes(`<artifacts>${REPORT}</artifacts>`));
+          assert.deepEqual(await artifacts.readTextInSession(sessionId, REPORT), {
+            ok: true,
+            text: REPORT_BYTES,
+          });
           assert.deepEqual(await artifacts.readTextInSession(sessionId, copiedId), {
             ok: true,
             text: REPORT_BYTES,
@@ -170,11 +174,7 @@ test('Agent and delivered file cards survive branch, edit resend and side conver
             sessionId,
             'history_compact_checkpoint_recorded',
           );
-          assert.equal(
-            checkpoint,
-            undefined,
-            'a summary naming the old Artifact is rebuilt from raw history',
-          );
+          assert.ok(checkpoint, 'an unchanged historical summary stays valid');
         } else {
           assert.ok(notification.text.includes(`<artifacts>${REPORT}</artifacts>`));
           assert.equal(
@@ -184,8 +184,8 @@ test('Agent and delivered file cards survive branch, edit resend and side conver
                 'history_compact_checkpoint_recorded',
               ),
             ),
-            sessionId === fixture.sessionId,
-            'source keeps its summary; the revision rebuilds it after delivery ids change',
+            true,
+            'source and revision preserve the historical summary',
           );
         }
       }
@@ -273,6 +273,50 @@ test('Agent and delivered file cards survive branch, edit resend and side conver
     } finally {
       await remover.close();
       await fixture.stopHost(restarted);
+    }
+  });
+});
+
+test('a first branch still carries handed-back files after the child Session has been removed', {
+  skip: process.platform === 'win32',
+  timeout: 120_000,
+}, async () => {
+  await withExecutionRoot(async (fixture) => {
+    const childId = await seedAsyncAgent(fixture);
+    const host = await fixture.startHost();
+    const client = await connectClient(fixture.root);
+    try {
+      assert.equal(
+        (
+          await client.request('session.remove', {
+            sessionId: childId,
+            expectedRevision: await revisionOf(client, childId),
+          })
+        ).kind,
+        'removed',
+      );
+      assert.equal(
+        (
+          await client.request('session.branch.create', {
+            sourceSessionId: fixture.sessionId,
+            targetSessionId: 'after-child-removal',
+            sourceTurnId: 'after-agent',
+            expectedSourceRevision: await revisionOf(client, fixture.sessionId),
+          })
+        ).kind,
+        'committed',
+      );
+      const read = await client.request('artifact.query', {
+        kind: 'read_chunk',
+        sessionId: 'after-child-removal',
+        artifactId: REPORT,
+        offset: 0,
+      });
+      assert.ok(read.kind === 'chunk');
+      assert.equal(Buffer.from(read.chunkBase64, 'base64').toString(), REPORT_BYTES);
+    } finally {
+      await client.close();
+      await fixture.stopHost(host);
     }
   });
 });
@@ -371,6 +415,9 @@ async function seedAsyncAgent(fixture: ExecutionFixture): Promise<string> {
         now: 1,
       });
     }
+    // Formal hand-back precedes the notification below; copying history is
+    // not allowed to borrow the child's ownership later.
+    await deliveryServices.retainChildArtifacts!(fixture.sessionId, childId, [REPORT]);
     // Exercise the producer that intentionally persists running, not the old
     // hand-authored completed result that missed the asynchronous lifecycle.
     const result = decodeCanonicalToolResultContent(

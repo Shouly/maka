@@ -289,7 +289,13 @@ export class HostRuntimeResourceCoordinator
 
   async hasLiveSessionResources(sessionId: string): Promise<boolean> {
     const updates = await this.#sessions.listShellRunUpdates(sessionId);
-    return updates.some((update) => isActiveShellRunStatus(update.result.status));
+    // An unavailable source leaves its last observation in history, not a live
+    // resource. Keep that status intact without blocking Session retirement.
+    return updates.some(
+      (update) =>
+        update.ownership.kind !== 'source_unavailable' &&
+        isActiveShellRunStatus(update.result.status),
+    );
   }
 
   async #query(

@@ -411,7 +411,7 @@ test('a Grep result is recognised by its shape, not by the tool that produced it
   assert.equal(readGlobResult({ files: ['a', 'b'], truncated: true })?.truncated, true);
 });
 
-test('a Grep panel is one row per hit, the path a link and the line beside it', () => {
+test('a Grep panel displays hits without file-opening controls even when an opener is available', () => {
   const item = call({
     toolUseId: 'grep-1',
     toolName: 'Grep',
@@ -419,7 +419,7 @@ test('a Grep panel is one row per hit, the path a link and the line beside it', 
     result: {
       kind: 'json',
       value: {
-        matches: ['src/a.ts:12:const x = 1', 'src/b.ts:3:const y = 2'],
+        matches: ['src/a.ts:12:const x = 1', 'src/b.ts:3:const y = 2', '2:EXPECTED_LAST_LINE'],
         mode: 'content',
         truncated: true,
         omitted: 7,
@@ -432,15 +432,17 @@ test('a Grep panel is one row per hit, the path a link and the line beside it', 
   const rows = [...document.querySelectorAll('[data-maka-search-row]')].map((row) =>
     row.getAttribute('data-maka-search-row'),
   );
-  assert.deepEqual(rows, ['src/a.ts', 'src/b.ts'], 'the path is its own element, and is the link');
+  assert.deepEqual(rows, ['src/a.ts', 'src/b.ts', '2:EXPECTED_LAST_LINE']);
   const text = document.documentElement.textContent ?? '';
   assert.ok(text.includes(':12'), 'the line number follows the path');
   assert.ok(text.includes('const x = 1'), 'and the matching text follows that');
+  assert.ok(text.includes('2:EXPECTED_LAST_LINE'), 'single-file hits keep their original text');
   assert.ok(text.includes('7 more omitted'), 'a capped list says what it dropped');
-  const names = [...document.querySelectorAll('button')].map((button) =>
-    button.getAttribute('aria-label'),
+  assert.equal(
+    document.querySelectorAll('button, a, [role="button"], [role="link"]').length,
+    0,
+    'search hits are display-only',
   );
-  assert.ok(names.includes('Open src/a.ts in Files'), names.join(', '));
 });
 
 test('a Glob panel lists paths, and says so when nothing matched', () => {

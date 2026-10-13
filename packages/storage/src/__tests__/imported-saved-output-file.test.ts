@@ -18,6 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -185,6 +186,36 @@ test('does not delete a staging name it failed to create exclusively', async () 
     assert.equal(await readFile(existing, 'utf8'), 'belongs to another attempt');
     await assert.rejects(stat(f.to), { code: 'ENOENT' });
     assert.deepEqual(f.created, []);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test('resource import registers cleanup before writing and validates content identity before publication', async () => {
+  const f = await fixture();
+  try {
+    let staged = '';
+    const expectedSha256 = createHash('sha256').update(f.bytes).digest('hex');
+    await assert.rejects(
+      publishImportedSavedOutputFile({
+        ...f.input,
+        expectedBytes: f.bytes.length,
+        expectedSha256: '0'.repeat(64),
+        onStaging: (path) => {
+          staged = path;
+        },
+      }),
+      /different content digest/,
+    );
+    assert.ok(staged);
+    await assert.rejects(stat(f.to), { code: 'ENOENT' });
+    assert.deepEqual(f.created, []);
+    await publishImportedSavedOutputFile({
+      ...f.input,
+      expectedBytes: f.bytes.length,
+      expectedSha256,
+    });
+    assert.deepEqual(await readFile(f.to), f.bytes);
   } finally {
     await f.dispose();
   }

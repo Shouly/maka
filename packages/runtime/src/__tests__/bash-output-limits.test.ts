@@ -32,7 +32,10 @@ import {
   isValidBashOutcome,
   type WholeShellOutput,
 } from '../bash-output-limits.js';
-import { capturedOutput, projectBashToolResultForModel } from '../bash-model-output.js';
+import {
+  capturedOutput,
+  projectBashToolResultForModel as projectPublishedResult,
+} from '../bash-model-output.js';
 import { PipeTailCollector } from '../pipe-tail-collector.js';
 import { ShellOutputSpool, type ShellOutputHead } from '../shell-output-spool.js';
 import { shapeTerminalResult } from '../shell-tools.js';
@@ -202,7 +205,7 @@ describe('a valid result past 30,000 characters is saved to a file', () => {
     const bounded = await boundTerminalResult(terminal({ stdout }), save.whole);
 
     assert.equal(save.calls, 1);
-    assert.deepEqual(bounded.savedOutput, {
+    assert.deepEqual(bounded.outputSpool, {
       path: '/tmp/maka/tool-results/session-1/run-1.txt',
       chars: 30_001,
       truncated: false,
@@ -211,7 +214,7 @@ describe('a valid result past 30,000 characters is saved to a file', () => {
     assert.equal(bounded.output.mode === 'pipes' && bounded.output.stdoutTruncated, true);
     assert.equal(
       projectBashToolResultForModel(bounded),
-      `Output too long to show (30,001 characters). The full output is saved to /tmp/maka/tool-results/session-1/run-1.txt; read it with Read or search it with Grep.\n\nPreview (first 2,000 characters):\n${'b'.repeat(2_000)}`,
+      `Output too long to show (30,001 characters). The full output is saved to maka://runtime/attachments/published-output; use its current saved-file path with Read(file_path, offset, limit), Grep(path), Bash or Python. Copy it to the working directory before editing.\n\nPreview (first 2,000 characters):\n${'b'.repeat(2_000)}`,
     );
   });
 
@@ -230,7 +233,7 @@ describe('a valid result past 30,000 characters is saved to a file', () => {
     const stdout = `${'h'.repeat(20_000)}${'t'.repeat(20_000)}`;
     const bounded = await boundTerminalResult(terminal({ stdout }));
     const shown = pipes(bounded).stdout;
-    assert.equal(bounded.savedOutput, undefined);
+    assert.equal(bounded.outputSpool, undefined);
     assert.equal(
       shown,
       `${'h'.repeat(15_000)}\n[... 10,000 characters omitted ...]\n${'t'.repeat(15_000)}`,
@@ -254,7 +257,7 @@ describe('a failure past 10,000 characters is a head and a tail, never a file', 
     const save = fakeWhole(0, '');
     const bounded = await boundTerminalResult(terminal({ stderr, status: 'failed' }), save.whole);
     assert.equal(save.calls, 0);
-    assert.equal(bounded.savedOutput, undefined);
+    assert.equal(bounded.outputSpool, undefined);
     assert.deepEqual(pipes(bounded), {
       stdout: '',
       stderr: `${'H'.repeat(5_000)}\n[... 1 character omitted ...]\n${'T'.repeat(5_000)}`,
@@ -524,7 +527,7 @@ describe('a long run of newlines before the end of the output', () => {
       save: () => spool.save(join(root, 'session-1', 'run-1.txt'), 2_000),
       head: (maxChars) => spool.head(maxChars),
     });
-    assert.equal(saved.savedOutput?.chars, 4 * 1024 * 1024 + 1);
+    assert.equal(saved.outputSpool?.chars, 4 * 1024 * 1024 + 1);
     const failure = boundTerminalResultInline(terminal({ stdout, status: 'failed' }));
     assert.ok(pipes(failure).stdout.endsWith('\nx'));
     assert.ok(capturedOutput({ mode: 'pipes', stdout, stderr: '' }).endsWith('\nx'));
@@ -588,11 +591,11 @@ describe('the notice for a saved output the file does not hold whole', () => {
       head: async () => undefined,
     };
     const bounded = await boundTerminalResult(terminal({ stdout: 's'.repeat(40_000) }), whole);
-    assert.equal(bounded.savedOutput?.truncated, true);
+    assert.equal(bounded.outputSpool?.truncated, true);
     const text = String(projectBashToolResultForModel(bounded));
     assert.equal(
       text,
-      'Output too long to show, and too long to save whole: /tmp/r/s/run.txt holds 1,234,567 characters of it, and a line in the file marks where output was left out. Read it with Read or search it with Grep.\n\nPreview (first 5 characters):\nstart',
+      'Output too long to show, and too long to save whole: maka://runtime/attachments/published-output holds 1,234,567 characters of it, and a line in the file marks where output was left out. Read it with Read or search it with Grep.\n\nPreview (first 5 characters):\nstart',
     );
     assert.doesNotMatch(text, /full output/u);
   });
@@ -721,3 +724,23 @@ describe('reading the command whose exit status is reported', () => {
     assert.match(pipes(shaped).stdout, /omitted/u);
   });
 });
+
+// Model projection fixtures begin after publication. The producer-only spool
+// is intentionally not part of the durable result or its model-visible ref.
+function projectBashToolResultForModel(
+  result: import('../bash-output-limits.js').ProducedTerminalResult,
+) {
+  const { outputSpool, ...terminal } = result;
+  return projectPublishedResult(
+    outputSpool
+      ? {
+          ...terminal,
+          savedOutput: {
+            ref: 'maka://runtime/attachments/published-output',
+            chars: outputSpool.chars,
+            truncated: outputSpool.truncated,
+          },
+        }
+      : terminal,
+  );
+}

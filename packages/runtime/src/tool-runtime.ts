@@ -283,7 +283,7 @@ export interface MakaTool<P = any, R = unknown> {
    * Optional synchronous provider-visible content mapping, used for screenshot
    * image parts. Returning `undefined` declines the mapping for this one result
    * and falls back to the default encoding — a tool whose result shape varies
-   * (Read answers with file text, an image ref, or a runtime resource) can then
+   * (Read answers with file text or an immutable image observation) can then
    * project the shape it owns without having to re-implement the others.
    */
   toModelOutput?: (options: {

@@ -114,31 +114,6 @@ export interface ContextOffloadGarbageCollectionResult {
   readonly hasMore: boolean;
 }
 
-export class ReadImageSnapshotStoreError extends Error {
-  constructor(readonly reason: ContextOffloadPutFailureReason) {
-    super(`Read image snapshot storage failed: ${reason}`);
-    this.name = 'ReadImageSnapshotStoreError';
-  }
-}
-
-export interface ReadImageSnapshotReader {
-  read(input: SessionContextRef): Promise<ContextOffloadReadResult>;
-}
-
-/** Looks up a Read image snapshot's record, its size among it, without reading it. */
-export interface ReadImageSnapshotSizeReader {
-  stat(input: SessionContextRef): Promise<ContextOffloadStatResult>;
-}
-
-export interface ReadImageSnapshotStore extends ReadImageSnapshotReader {
-  snapshot(input: {
-    /** Stable identity of the Read result within its Session. */
-    readonly ownerId: string;
-    readonly bytes: Uint8Array;
-    readonly mimeType: string;
-  }): Promise<SessionContextRef>;
-}
-
 /**
  * Storage contract for capped, whole-object Agent context offload.
  *

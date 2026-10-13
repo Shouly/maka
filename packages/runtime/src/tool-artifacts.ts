@@ -30,6 +30,8 @@ export interface ToolArtifactCandidate {
   summary?: string;
   sourcePath?: string;
   content?: string | Uint8Array;
+  /** Reuse bytes already owned by this Session, without re-entering the store during publication. */
+  reuseArtifactId?: string;
   /** Explicit delivery reads bytes under its filesystem authority, lazily per file. */
   readContent?: () => Promise<Uint8Array>;
 }

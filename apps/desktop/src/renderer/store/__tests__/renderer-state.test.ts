@@ -855,6 +855,61 @@ test('switching away and back keeps the steps the live turn had already produced
   assert.ok(after === undefined || after.terminal === true);
   f.store.disconnect();
 });
+test('switching and a failed observation do not complete a running turn; an abort stays aborted', async (t) => {
+  const f = fakeRuntime();
+  t.after(() => f.store.disconnect());
+  const a = sid('a');
+  const b = sid('b');
+  f.store.observe(a, 'en');
+  await tick();
+  f.observers[0]!.event(toolStart());
+  f.frames.splice(0).forEach((frame) => frame());
+  const projectedTurn = () => {
+    const state = f.store.getState();
+    return createTranscriptProjection().project({
+      sessionId: a,
+      locale: 'en',
+      messages: state.messages,
+      liveTurn: state.liveTurns[a],
+    })[0];
+  };
+  // useLiveStatusOverlay reads this witness; the durable-only projector's
+  // inferred default is not a terminal fact.
+  const inFlight = () => {
+    const live = f.store.getState().liveTurns[a];
+    return Boolean(live && !live.terminal);
+  };
+  assert.equal(inFlight(), true);
+  f.store.observe(b, 'en');
+  await tick();
+  f.store.observe(a, 'en');
+  await tick();
+  assert.equal(inFlight(), true);
+  f.observers.at(-1)!.fail?.(new Error('Host connection lost'));
+  assert.equal(f.store.getState().observationReady, false);
+  assert.equal(inFlight(), true, 'no terminal fact came from the Host');
+
+  // Reopening gets the actual terminal record, not a fabricated successful
+  // completion based on the disappearance of a live subscription.
+  f.store.observe(a, 'en');
+  await tick();
+  f.readers.at(-1)!.receive(
+    batch(a, [
+      {
+        type: 'tool_call',
+        id: 'tool',
+        turnId: 'turn',
+        ts: 1,
+        toolName: 'Bash',
+        args: { command: 'npm test' },
+      },
+      { type: 'turn_state', id: 'aborted', turnId: 'turn', ts: 2, status: 'aborted' },
+    ]),
+  );
+  await tick();
+  assert.equal(projectedTurn()?.status, 'aborted');
+});
+
 test('interaction acknowledgements beat an older in-flight query', async () => {
   const f = fakeRuntime();
   const id = sid('a');

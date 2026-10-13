@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, open, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -27,6 +27,11 @@ export interface PublishImportedSavedOutputFileInput {
   readonly from: string;
   readonly to: string;
   readonly stateRoot: string;
+  readonly mode?: number;
+  readonly expectedBytes?: number;
+  readonly expectedSha256?: string;
+  /** Durable cleanup intent must exist before either path receives bytes. */
+  onStaging?(path: string): void;
   /** Synchronous ownership registration, before any post-publication IO. */
   onCreated(path: string): void;
   /** Accept an identical existing file, or throw the caller's conflict error. */
@@ -70,11 +75,12 @@ export async function publishImportedSavedOutputFile(
   const staging = join(dirname(input.to), `.${basename(input.to)}.${deps.randomUUID()}.import.tmp`);
   let stagingCreated = false;
   try {
-    const output = await deps.open(staging, 'wx', 0o600);
+    input.onStaging?.(staging);
+    const output = await deps.open(staging, 'wx', input.mode ?? 0o600);
     stagingCreated = true;
     try {
-      await copySavedOutput(input.from, output);
-      if (process.platform !== 'win32') await output.chmod(0o600);
+      await copySavedOutput(input.from, output, input);
+      if (process.platform !== 'win32') await output.chmod(input.mode ?? 0o600);
       await output.sync();
       await output.close();
     } catch (error) {
@@ -100,19 +106,29 @@ export async function publishImportedSavedOutputFile(
 }
 
 /** Stream the hydrated bundle's immutable file; no additional size limit or full-file buffer. */
-async function copySavedOutput(from: string, output: ImportedSavedOutputFileHandle): Promise<void> {
+async function copySavedOutput(
+  from: string,
+  output: ImportedSavedOutputFileHandle,
+  expected: Pick<PublishImportedSavedOutputFileInput, 'expectedBytes' | 'expectedSha256'>,
+): Promise<void> {
   const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW | constants.O_NONBLOCK;
   const source = await open(from, constants.O_RDONLY | noFollow);
   try {
     const before = await source.stat({ bigint: true });
     if (!before.isFile()) throw new Error('Imported saved output is not a regular file');
+    if (expected.expectedBytes !== undefined && before.size !== BigInt(expected.expectedBytes))
+      throw new Error('Imported resource has a different size');
+    const hash = expected.expectedSha256 ? createHash('sha256') : undefined;
     let copied = 0n;
     for await (const chunk of source.createReadStream({ autoClose: false })) {
       const bytes = chunk as Buffer;
+      hash?.update(bytes);
       copied += BigInt(bytes.byteLength);
       if (copied > before.size) throw new Error('Imported saved output changed while being read');
       await output.writeFile(bytes);
     }
+    if (hash && hash.digest('hex') !== expected.expectedSha256)
+      throw new Error('Imported resource has a different content digest');
     const after = await source.stat({ bigint: true });
     if (copied !== before.size || after.size !== before.size || after.mtimeNs !== before.mtimeNs) {
       throw new Error('Imported saved output changed while being read');

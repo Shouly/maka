@@ -78,7 +78,7 @@ test('delegation copies only selected canonical attachments into the target Work
       if (copied[0]!.ref.kind !== 'session_file') throw new Error('Expected canonical ref');
       const binary = await store.readTextInSession('target-work', copied[0]!.ref.relativePath);
       assert.deepEqual(binary, { ok: true, text: 'requirements' });
-      assert.notEqual(copied[0]!.ref.relativePath, selected.id);
+      assert.equal(copied[0]!.ref.relativePath, selected.id);
       await assert.rejects(
         copyWorkHubAttachmentsToTarget(store, artifacts, 'target-work', [
           { ...source, bytes: 999 },

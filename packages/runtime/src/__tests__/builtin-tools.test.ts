@@ -59,7 +59,6 @@ import {
   shellRunResourceRef,
   type BackgroundTaskStopper,
   type PtyControlWriter,
-  type RuntimeResourceReader,
 } from '../shell-run-contract.js';
 import {
   LOCAL_WORKSPACE_EXECUTOR_FACTS,
@@ -1501,77 +1500,35 @@ describe('builtin Bash streaming output', () => {
     }
   });
 
-  test('Read treats runtime background task refs as whole resources', async () => {
-    const calls: unknown[] = [];
-    const runtimeResources = {
-      async readRuntimeResource(sessionId: string, ref: string, abortSignal: AbortSignal) {
-        calls.push({ sessionId, ref });
-        return {
-          kind: 'shell_run',
-          ref,
-          mode: 'pipes',
-          status: 'running',
-          cwd: '/workspace',
-          cmd: 'sleep 60',
-          startedAt: 1,
-          updatedAt: 2,
-          revision: 2,
-          output: {
-            mode: 'pipes',
-            stdout: 'background task detail',
-            stderr: '',
-            stdoutTruncated: false,
-            stderrTruncated: false,
-            redacted: false,
-          },
-        };
-      },
-    } satisfies RuntimeResourceReader;
-    const read = buildBuiltinTools({ runtimeResources }).find((tool) => tool.name === 'Read');
-    if (!read) throw new Error('Read tool missing');
-    const parameters = read.parameters as {
-      jsonSchema: PromiseLike<Record<string, unknown>> | Record<string, unknown>;
-      validate(value: unknown): PromiseLike<{ success: boolean }> | { success: boolean };
-    };
-    const providerSchema = await parameters.jsonSchema;
-    // Anthropic-compatible: a plain top-level object with properties, and no
-    // top-level union combinator (#1228).
-    assert.strictEqual(providerSchema.type, 'object');
-    assert.strictEqual(providerSchema.anyOf, undefined);
-    assert.strictEqual(providerSchema.oneOf, undefined);
-    assert.strictEqual(providerSchema.allOf, undefined);
-    assert.deepStrictEqual(
-      Object.keys(providerSchema.properties as Record<string, unknown>).sort(),
-      ['file_path', 'limit', 'offset', 'ref'],
-    );
-    // The strict file-vs-ref union remains the authoritative runtime validator.
-    assert.strictEqual(
-      (await parameters.validate({ file_path: 'README.md', offset: 2, limit: 10 })).success,
-      true,
-    );
-    assert.strictEqual(
-      (await parameters.validate({ ref: 'maka://runtime/background-tasks/shell-run-1' })).success,
-      true,
-    );
-    assert.strictEqual((await parameters.validate({})).success, false);
-    assert.strictEqual(
-      (
-        await parameters.validate({
-          ref: 'maka://runtime/background-tasks/shell-run-1',
-          offset: 2,
-        })
-      ).success,
+  test('Read has one file-path interface and file preparation does not add model tools', async () => {
+    const tools = buildBuiltinTools();
+    assert.equal(
+      tools.some((tool) => tool.name === 'ListSavedFiles' || tool.name === 'TaskOutput'),
       false,
     );
-    assert.strictEqual(
-      (
-        await parameters.validate({
-          file_path: 'README.md',
-          ref: 'maka://runtime/background-tasks/shell-run-1',
-        })
-      ).success,
-      false,
+    const read = tools.find((tool) => tool.name === 'Read')!;
+    const parameters = read.parameters as z.ZodType;
+    const providerSchema = z.toJSONSchema(parameters);
+    assert.equal(providerSchema.type, 'object');
+    assert.equal(providerSchema.anyOf, undefined);
+    assert.deepEqual(Object.keys(providerSchema.properties ?? {}).sort(), [
+      'file_path',
+      'limit',
+      'offset',
+    ]);
+    assert.equal(
+      parameters.safeParse({ file_path: 'README.md', offset: 2, limit: 10 }).success,
+      true,
     );
+    for (const ref of [
+      '',
+      'maka://runtime/attachments/file',
+      'maka://runtime/task-outputs/task',
+      'maka://runtime/background-tasks/task',
+    ]) {
+      assert.equal(parameters.safeParse({ ref }).success, false);
+      assert.equal(parameters.safeParse({ file_path: 'README.md', ref }).success, false);
+    }
     const context = {
       sessionId: 'session-1',
       runId: 'run-1',
@@ -1582,136 +1539,8 @@ describe('builtin Bash streaming output', () => {
       emitOutput: () => {},
     };
     await assert.rejects(
-      async () => read.impl({ file_path: 'maka://runtime/background-tasks/shell-run-1' }, context),
-      /must be read with the ref parameter/,
-    );
-    const result = await read.impl({ ref: 'maka://runtime/background-tasks/shell-run-1' }, context);
-
-    assert.deepStrictEqual(result, {
-      kind: 'shell_run',
-      ref: 'maka://runtime/background-tasks/shell-run-1',
-      mode: 'pipes',
-      status: 'running',
-      cwd: '/workspace',
-      cmd: 'sleep 60',
-      startedAt: 1,
-      updatedAt: 2,
-      revision: 2,
-      output: {
-        mode: 'pipes',
-        stdout: 'background task detail',
-        stderr: '',
-        stdoutTruncated: false,
-        stderrTruncated: false,
-        redacted: false,
-      },
-    });
-    assert.deepStrictEqual(calls, [
-      {
-        sessionId: 'session-1',
-        ref: 'maka://runtime/background-tasks/shell-run-1',
-      },
-    ]);
-  });
-
-  test('Read routes opaque attachment refs through the Session-bound attachment reader', async () => {
-    const calls: unknown[] = [];
-    const read = buildBuiltinTools({
-      attachmentResources: {
-        async readAttachmentResource(sessionId, artifactId) {
-          calls.push({ sessionId, artifactId });
-          return { kind: 'text', text: 'attachment marker' };
-        },
-      },
-    }).find((tool) => tool.name === 'Read');
-    if (!read) throw new Error('Read tool missing');
-    const context = {
-      sessionId: 'session-1',
-      runId: 'run-1',
-      turnId: 'turn-1',
-      cwd: '/workspace',
-      toolCallId: 'tool-1',
-      abortSignal: new AbortController().signal,
-      emitOutput: () => {},
-    };
-
-    assert.deepEqual(await read.impl({ ref: 'maka://runtime/attachments/attachment-1' }, context), {
-      kind: 'text',
-      text: 'attachment marker',
-    });
-    assert.deepEqual(calls, [{ sessionId: 'session-1', artifactId: 'attachment-1' }]);
-  });
-
-  test('Read normalizes a blank ref to "no ref" before validating the file-or-resource union', async () => {
-    const read = buildBuiltinTools({
-      runtimeResources: {
-        readRuntimeResource: async () => ({ kind: 'text', text: 'unused' }),
-      },
-    }).find((tool) => tool.name === 'Read');
-    if (!read) throw new Error('Read tool missing');
-    const parameters = read.parameters as {
-      validate(value: unknown): PromiseLike<{
-        success: boolean;
-        value?: unknown;
-        error?: unknown;
-      }>;
-    };
-
-    // A blank ref alongside a path passes, and the ref key is dropped so the
-    // canonical input is the pure file variant.
-    const normalized = await parameters.validate({
-      file_path: 'config.yaml',
-      ref: '',
-      offset: 2,
-    });
-    assert.equal(normalized.success, true);
-    if (normalized.success) {
-      assert.deepEqual(normalized.value, { file_path: 'config.yaml', offset: 2 });
-      assert.ok(!('ref' in (normalized.value as Record<string, unknown>)));
-    }
-    assert.equal(
-      (await parameters.validate({ file_path: 'config.yaml', ref: '   ' })).success,
-      true,
-    );
-    // A lone blank ref still fails: there is no readable target.
-    assert.equal((await parameters.validate({ ref: '' })).success, false);
-    assert.equal((await parameters.validate({ ref: '   ' })).success, false);
-  });
-
-  test('Read ignores provider defaults beside a non-empty runtime ref', async () => {
-    const read = buildBuiltinTools({
-      runtimeResources: {
-        readRuntimeResource: async () => ({ kind: 'text', text: 'unused' }),
-      },
-    }).find((tool) => tool.name === 'Read');
-    if (!read) throw new Error('Read tool missing');
-    const parameters = read.parameters as {
-      validate(value: unknown): PromiseLike<{
-        success: boolean;
-        value?: unknown;
-      }>;
-    };
-    const ref = 'maka://runtime/background-tasks/shell-run-1';
-
-    const normalized = await parameters.validate({
-      file_path: '',
-      offset: 0,
-      limit: 1,
-      ref,
-    });
-    assert.equal(normalized.success, true);
-    if (normalized.success) assert.deepEqual(normalized.value, { ref });
-
-    assert.equal(
-      (
-        await parameters.validate({
-          file_path: 'README.md',
-          offset: 0,
-          limit: 1,
-          ref,
-        })
-      ).success,
-      false,
+      async () => read.impl({ ref: 'maka://runtime/background-tasks/shell-run-1' }, context),
+      /requires file_path/,
     );
   });
 

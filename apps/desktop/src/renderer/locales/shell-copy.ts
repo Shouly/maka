@@ -1047,9 +1047,9 @@ const SHELL_COPY_BY_LOCALE = {
       permissionFailedTitle: '切换权限模式失败',
       permissionFallback: '权限模式暂时无法切换，请稍后重试。',
       updateFailures: {
-        session_busy: '当前任务正在运行或有交互待处理，等结束后再改设置。',
+        session_busy: '当前任务或关联任务仍在运行或有待处理工作，请先完成或停止任务后再试。',
         operation_conflict: '任务状态刚刚变化，请刷新后重试。',
-        operation_unavailable: '当前 Runtime Host 不支持此设置。',
+        operation_unavailable: '当前 Runtime Host 不支持此操作。',
         not_found: '任务不存在，可能已被删除。',
       },
       attachmentIngestBlocked: {
@@ -1567,9 +1567,9 @@ const SHELL_COPY_BY_LOCALE = {
       permissionFailedTitle: '切換權限模式失敗',
       permissionFallback: '權限模式暫時無法切換，請稍後重試。',
       updateFailures: {
-        session_busy: '目前任務正在執行或有互動待處理，等結束後再改設定。',
+        session_busy: '目前任務或關聯任務仍在執行或有待處理工作，請先完成或停止任務後再試。',
         operation_conflict: '任務狀態剛剛變化，請重新整理後重試。',
-        operation_unavailable: '目前 Runtime Host 不支援此設定。',
+        operation_unavailable: '目前 Runtime Host 不支援此操作。',
         not_found: '任務不存在，可能已被刪除。',
       },
       attachmentIngestBlocked: {
@@ -2097,9 +2097,10 @@ const SHELL_COPY_BY_LOCALE = {
       permissionFailedTitle: 'Could not change permission mode',
       permissionFallback: 'The permission mode could not be changed. Try again later.',
       updateFailures: {
-        session_busy: 'A task is running or waiting on you. Change this setting after it settles.',
+        session_busy:
+          'This task or a linked task is still running or has pending work. Finish or stop it before trying again.',
         operation_conflict: 'The task changed underneath this request. Refresh and try again.',
-        operation_unavailable: 'This Runtime Host does not support that setting.',
+        operation_unavailable: 'This Runtime Host does not support that operation.',
         not_found: 'The task no longer exists.',
       },
       attachmentIngestBlocked: {
@@ -2451,8 +2452,8 @@ export function localizedShellErrorMessage(
   const actions = getShellCopy(locale).sessionSettingsActions;
   if (error instanceof AttachmentIngestBlockedError)
     return actions.attachmentIngestBlocked[error.code];
-  // A Session update the Host refused with a code (#4878) reads as its
-  // reason on every surface, not only the one that asked for setting copy.
+  // Session actions and settings refused by the Host keep their stable code
+  // across IPC. Render that reason before considering provider error text.
   const refused = lookupCopy(actions.updateFailures, expectedOperationCode(error));
   if (refused) return refused;
   // A classified failure (timeout / rate limit / auth / provider / network)

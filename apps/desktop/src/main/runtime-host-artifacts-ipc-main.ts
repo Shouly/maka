@@ -57,7 +57,7 @@ const ATTACHMENT_PREVIEW_LIMIT_EXCEEDED = Symbol("attachment-preview-limit-excee
 
 export function registerRuntimeHostArtifactsIpc(
   deps: RuntimeHostArtifactsIpcDeps,
-): void {
+): { reveal(sessionId: string, artifactId: string): Promise<{ ok: true; opened: string } | { ok: false; reason: 'missing' | 'open-failed' }> } {
   const presentationRoot =
     deps.presentationRoot ??
     join(tmpdir(), "maka-runtime-host-artifacts", deps.client.hostEpoch);
@@ -120,9 +120,7 @@ export function registerRuntimeHostArtifactsIpc(
       }
     },
   );
-  deps.ipcMain.handle(
-    "app:showArtifactInFolder",
-    async (_event, sessionId: string, artifactId: string) => {
+  const reveal = async (sessionId: string, artifactId: string) => {
       const artifact = await deps.client.getArtifact(sessionId, artifactId);
       if (!artifact) {
         return { ok: false as const, reason: "missing" as const };
@@ -134,8 +132,8 @@ export function registerRuntimeHostArtifactsIpc(
       } catch {
         return { ok: false as const, reason: "open-failed" as const };
       }
-    },
-  );
+  };
+  deps.ipcMain.handle('app:showArtifactInFolder', (_event, sessionId: string, artifactId: string) => reveal(sessionId, artifactId));
   deps.ipcMain.handle(
     "app:saveArtifactAs",
     async (
@@ -209,6 +207,7 @@ export function registerRuntimeHostArtifactsIpc(
       }
     },
   );
+  return { reveal };
 }
 
 /** Guest-safe projection used by transcript attachment thumbnails. */

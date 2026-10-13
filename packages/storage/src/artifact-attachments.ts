@@ -30,81 +30,17 @@ import {
   normalizeArtifactImagePreviewMime,
 } from '@maka/core/artifacts';
 import { createHash } from 'node:crypto';
-import { type StorageRef, type ToolResultContent } from '@maka/core/events';
-import type {
-  ReadImageSnapshotReader,
-  ReadImageSnapshotSizeReader,
-} from '@maka/core/context-offload';
+import type { StorageRef } from '@maka/core/events';
 import type { ArtifactAuthorityStore, DurableArtifactAttachmentReader } from './artifact-store.js';
 import { sanitizeArtifactName } from './artifact-store.js';
-
-export interface ArtifactAttachmentResourceReader {
-  readAttachmentResource(
-    sessionId: string,
-    artifactId: string,
-    abortSignal: AbortSignal,
-  ): Promise<ToolResultContent>;
-}
-
-/** Read a user-uploaded Artifact without exposing its storage path. */
-export function createArtifactAttachmentResourceReader(input: {
-  artifactStore: Pick<ArtifactAuthorityStore, 'getInSession' | 'readTextInSession'>;
-}): ArtifactAttachmentResourceReader {
-  return Object.freeze({
-    async readAttachmentResource(
-      sessionId: string,
-      artifactId: string,
-      abortSignal: AbortSignal,
-    ): Promise<ToolResultContent> {
-      abortSignal.throwIfAborted();
-      const record = (await input.artifactStore.getInSession(sessionId, artifactId)).record;
-      if (!record || record.source !== 'user_upload') {
-        throw new Error('Attachment was not found in this Session');
-      }
-      if (record.sessionId !== sessionId) {
-        throw new Error('Attachment was not found in this Session');
-      }
-      if (record.kind === 'image') {
-        if (!record.mimeType) throw new Error('Attachment image has no media type');
-        return {
-          kind: 'image',
-          mimeType: record.mimeType,
-          ref: { kind: 'session_file', sessionId, relativePath: artifactId },
-        };
-      }
-      if (record.kind === 'pdf') {
-        throw new Error('PDF attachments cannot be decoded by Read');
-      }
-      const read = await input.artifactStore.readTextInSession(sessionId, artifactId);
-      abortSignal.throwIfAborted();
-      if (!read.ok) throw new Error(`Attachment could not be read: ${read.reason}`);
-      return { kind: 'text', text: read.text };
-    },
-  });
-}
 
 export function createAttachmentByteReader(input: {
   artifactStore: DurableArtifactAttachmentReader;
   sessionId: string;
-  readImageSnapshots?: ReadImageSnapshotReader;
-  readImageSnapshotsUnavailable?: boolean;
   maxBytes?: number;
 }): AttachmentByteReader {
   const maxBytes = input.maxBytes ?? MAX_ATTACHMENT_BYTES;
   return async (ref) => {
-    if (ref.kind === 'session_context') {
-      if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
-      if (!input.readImageSnapshots) {
-        return {
-          ok: false,
-          reason: input.readImageSnapshotsUnavailable ? 'unavailable' : 'unsupported_ref_kind',
-        };
-      }
-      const result = await input.readImageSnapshots.read(ref);
-      return result.ok
-        ? { ok: true, bytes: new Uint8Array(result.bytes) }
-        : { ok: false, reason: result.reason };
-    }
     if (ref.kind !== 'session_file') return { ok: false, reason: 'unsupported_ref_kind' };
     if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
     const result = await input.artifactStore.readDurableAttachmentBinary({
@@ -120,30 +56,16 @@ export function createAttachmentByteReader(input: {
 
 /**
  * The sizes `createAttachmentByteReader` would read, from the records alone:
- * Artifact metadata and Read image snapshot references. No bytes are read.
+ * Artifact metadata covers uploaded images and immutable Read observations.
+ * No bytes are read.
  */
 export function createAttachmentSizeReader(input: {
   artifactStore: Pick<DurableArtifactAttachmentReader, 'readDurableAttachmentSize'>;
   sessionId: string;
-  readImageSnapshots?: ReadImageSnapshotSizeReader;
-  readImageSnapshotsUnavailable?: boolean;
   maxBytes?: number;
 }): AttachmentSizeReader {
   const maxBytes = input.maxBytes ?? MAX_ATTACHMENT_BYTES;
   return async (ref) => {
-    if (ref.kind === 'session_context') {
-      if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
-      if (!input.readImageSnapshots) {
-        return {
-          ok: false,
-          reason: input.readImageSnapshotsUnavailable ? 'unavailable' : 'unsupported_ref_kind',
-        };
-      }
-      const result = await input.readImageSnapshots.stat(ref);
-      return result.ok
-        ? { ok: true, bytes: result.record.sizeBytes }
-        : { ok: false, reason: result.reason };
-    }
     if (ref.kind !== 'session_file') return { ok: false, reason: 'unsupported_ref_kind' };
     if (ref.sessionId !== input.sessionId) return { ok: false, reason: 'session_mismatch' };
     const result = await input.artifactStore.readDurableAttachmentSize({
@@ -188,7 +110,8 @@ export function createReadImageSnapshotPlanner(artifactStore: ReadImageSnapshotA
       sessionId: input.sessionId,
       turnId: input.turnId,
       name: sanitizeArtifactName(input.name),
-      bytes: input.bytes.slice(),
+      // Buffer.slice() aliases its input; always own the snapshot bytes.
+      bytes: new Uint8Array(input.bytes),
       mimeType: input.mimeType,
     });
     const id = `image_${createHash('sha256')

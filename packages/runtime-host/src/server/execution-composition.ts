@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { createHostFileResourceService } from './file-resource-service.js';
 import { copyWorkHubAttachmentsToTarget } from './workhub-message-attachments.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { attachmentKindFromMimeType, MAX_READ_IMAGE_BYTES } from '@maka/core/attachments';
@@ -110,8 +111,6 @@ import { PluginSkillService } from '@maka/runtime/plugin-skill-service';
 import { type RuntimeHostedRootAuthority } from '@maka/runtime/message-authority';
 import { isHostedExecutionTerminal } from './hosted-execution-authority.js';
 import { createAgentGraphControlStore } from '@maka/storage/agent-graph-control-store';
-import { createArtifactAttachmentResourceReader } from '@maka/storage/artifact-stores';
-import { createReadImageSnapshotStore } from '@maka/storage/read-image-snapshot-store';
 import { isSessionNotFoundError } from '@maka/storage/execution-stores';
 import { createExternalSessionAdapterRegistry } from '@maka/storage/external-sessions';
 import { createGitWorktreeChildExecutor } from '@maka/storage/git-worktree-child-executor';
@@ -454,6 +453,8 @@ export async function createExecutionRuntimeHostComposition(
       onTaskFinished: (record) => taskNotifications?.taskFinished(record),
       taskOutputRoot: savedOutputRoots.taskOutputs,
       toolResultRoot: savedOutputRoots.toolResults,
+      onTaskOutputUpdated: (record) =>
+        fileResources.refreshTaskOutput(record.sessionId, record.shellRunId),
     });
     const sandboxManager = createBuiltinSandboxManager();
     const filesystemWorkerLaunchSpecProvider =
@@ -481,6 +482,11 @@ export async function createExecutionRuntimeHostComposition(
         requireContinuity(continuity).enqueueSessionDomainChanged(sessionId, 'session_task'),
       context.requestDrain,
     );
+    const fileResources = createHostFileResourceService({
+      artifacts: openedArtifactStore,
+      shellRuns: openedShellRunStore,
+      taskOutputRoot: savedOutputRoots.taskOutputs,
+    });
     runtimeResources = new HostRuntimeResourceCoordinator({
       manager: shellRuns,
       sessions: {
@@ -502,6 +508,7 @@ export async function createExecutionRuntimeHostComposition(
         requireContinuity(continuity).enqueueRuntimeResourceChanged(update),
     });
     const executionArtifacts = createHostExecutionArtifactServices({
+      fileResources,
       artifacts: openedArtifactStore,
       requestDrain: context.requestDrain,
       sessionAdmission,
@@ -513,33 +520,9 @@ export async function createExecutionRuntimeHostComposition(
     const builtinTools = {
       fileChanges,
       shellRuns: runtimeResources,
-      runtimeResources,
-      attachmentResources: createArtifactAttachmentResourceReader({
-        artifactStore: openedArtifactStore,
-      }),
       backgroundTasks: runtimeResources,
       ptyControls: runtimeResources,
-      ...(openedContextOffloadStore
-        ? {
-            snapshotImage: async (input: {
-              readonly sessionId: string;
-              readonly ownerId: string;
-              readonly bytes: Uint8Array;
-              readonly mimeType: string;
-            }) =>
-              createReadImageSnapshotStore(openedContextOffloadStore, input.sessionId).snapshot({
-                ownerId: input.ownerId,
-                bytes: input.bytes,
-                mimeType: input.mimeType,
-              }),
-            releaseImageSnapshot: async (input: {
-              readonly sessionId: string;
-              readonly refId: string;
-            }) => {
-              await openedContextOffloadStore.releaseReference(input);
-            },
-          }
-        : {}),
+      snapshotImage: executionArtifacts.snapshotImage,
       ...(sandboxManager ? { sandboxManager } : {}),
       ...(filesystemWorker ? { filesystemWorker } : {}),
     };
@@ -1262,6 +1245,7 @@ export async function createExecutionRuntimeHostComposition(
       listArtifactsForTurn: (sessionId, turnId) =>
         openedArtifactStore.listTurnArtifacts(sessionId, turnId),
       publishChildWorkspacePatch: executionArtifacts.publishChildWorkspacePatch,
+      retainChildArtifacts: executionArtifacts.retainChildArtifacts,
       assertChildWorkspaceQuiescent: async (sessionId) => {
         if (await runtimeResources!.hasLiveSessionResources(sessionId)) {
           throw new Error(
@@ -1322,7 +1306,6 @@ export async function createExecutionRuntimeHostComposition(
       onModelToolsChanged: registerBackendInvalidation,
       interactions,
       grants: stores.interactionStore,
-      toolResultRoot: savedOutputRoots.toolResults,
     });
     externalAgentSetup = new HostExternalAgentSetupCoordinator({
       install: async (input) => {
@@ -2288,6 +2271,7 @@ export async function createExecutionRuntimeHostComposition(
       isSessionActive: (sessionId) => coordinator.readRootState(sessionId).kind !== 'idle',
       requestDrain: context.requestDrain,
       savedOutputRoots,
+      freezeTaskOutputs: fileResources.freezeTaskOutputs,
     });
     const sessionRetirement = new HostSessionRetirementCoordinator({
       stores: stores.sessionStore,
@@ -2309,6 +2293,7 @@ export async function createExecutionRuntimeHostComposition(
       ...(contextOffloadAuthority ? { contextOffload: contextOffloadAuthority } : {}),
       purgeOperationalState: async (sessionId) => {
         await stores.purgeConversationOperationalState(sessionId);
+        fileResources.forgetSession(sessionId);
         await openedPlanStore.purgeSessionState(sessionId);
         await openedDeepResearchStore.purgeSessionState(sessionId);
       },

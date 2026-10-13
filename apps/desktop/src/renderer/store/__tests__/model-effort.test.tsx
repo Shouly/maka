@@ -32,6 +32,7 @@ import { TooltipProvider } from '../../components/ui/tooltip.js';
 import { ModelMenu } from '../../components/composer/ModelMenu.js';
 import { modelCatalogDescription } from '../../components/settings/models/ModelCatalogStatusRow.js';
 import { getSettingsModelsCopy } from '../../locales/settings-models-copy.js';
+import { getWelcomeCopy } from '../../locales/welcome-copy.js';
 
 function choice(overrides: Partial<ChatModelChoice>): ChatModelChoice {
   return {
@@ -93,6 +94,63 @@ test('a model with no levels shows no effort on the chip', () => {
     chip(choice({ thinkingLevels: [], thinkingSource: 'none', reasoningSupport: 'unknown' })),
     'GPT-6 Sol',
   );
+});
+
+test('pending and failed model reads do not claim an empty catalog or offer stale choices', () => {
+  for (const locale of ['zh-CN', 'zh-TW', 'en'] as const) {
+    const copy = getWelcomeCopy(locale).model;
+    for (const choices of [[], [choice({})]]) {
+      for (const catalogState of ['loading', 'unavailable'] as const) {
+        const html = renderToStaticMarkup(
+          createElement(LocaleProvider, {
+            locale,
+            children: createElement(TooltipProvider, {
+              children: createElement(ModelMenu, {
+                choices,
+                catalogState,
+                current: { connectionSlug: 'codex', model: 'gpt-6-sol' },
+                thinking: { current: undefined, onChange: () => {} },
+                onPick: () => {},
+                onOpenSettings: () => {},
+                onRetry: () => {},
+              }),
+            }),
+          }),
+        );
+        const button = parseHTML(html).document.querySelector('button');
+        assert.ok(button);
+        assert.equal(
+          button.querySelector('.truncate')?.textContent,
+          catalogState === 'loading' ? copy.loading : copy.unavailable,
+        );
+        assert.equal(button.textContent?.includes(copy.empty), false);
+        assert.equal(button.hasAttribute('disabled'), catalogState === 'loading');
+        assert.equal(button.getAttribute('data-maka-model-catalog'), catalogState);
+        if (catalogState === 'unavailable') assert.equal(button.title, copy.retry);
+      }
+    }
+  }
+});
+
+test('only a successfully read empty model catalog prompts model setup', () => {
+  const html = renderToStaticMarkup(
+    createElement(LocaleProvider, {
+      locale: 'en',
+      children: createElement(TooltipProvider, {
+        children: createElement(ModelMenu, {
+          choices: [],
+          catalogState: 'ready',
+          current: undefined,
+          thinking: { current: undefined, onChange: () => {} },
+          onPick: () => {},
+          onOpenSettings: () => {},
+        }),
+      }),
+    }),
+  );
+  const button = parseHTML(html).document.querySelector('button');
+  assert.equal(button?.querySelector('.truncate')?.textContent, getWelcomeCopy('en').model.empty);
+  assert.equal(button?.hasAttribute('disabled'), false);
 });
 
 test('the catalog line says which table is in force and the last failure', () => {

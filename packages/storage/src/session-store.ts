@@ -55,7 +55,6 @@ import { isOrchestrationMode } from '@maka/core/orchestration';
 import { decodePersistedPermissionMode, isPermissionMode } from '@maka/core/permission';
 import type { PersistedValue } from '@maka/core/persisted-value';
 import { isSubagentWorkspaceBinding } from '@maka/core/subagent-workspace';
-import { WORKSPACE_AUTHORITY_SESSION_ID } from '@maka/core/workspace-version-authority';
 import type {
   AgentGraphOperatorProvisionRequest,
   AgentGraphOperatorProvisionResult,

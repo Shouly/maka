@@ -142,7 +142,7 @@ test('the WorkHub coordination profile has conversational authority but zero too
   assert.deepEqual(projectHostedExecutionTools([productTool], 'workhub-coordination-v1'), []);
 });
 
-test('WorkHub v2 can read its attachments without inheriting terminal, browser, or filesystem access', async () => {
+test('WorkHub v2 uses the ordinary path Read without adding terminal or browser tools', async () => {
   const makeTool = (name: string): MakaTool => ({
     name,
     description: name,
@@ -151,15 +151,7 @@ test('WorkHub v2 can read its attachments without inheriting terminal, browser, 
   });
   const control = makeTool('mcp__desktop_workhub__control');
   const tasks = makeTool('mcp__desktop_workhub__tasks');
-  const reads: unknown[] = [];
-  const builtinRead = buildBuiltinTools({
-    attachmentResources: {
-      async readAttachmentResource(sessionId, artifactId) {
-        reads.push({ sessionId, artifactId });
-        return { kind: 'text', text: 'attachment contents' };
-      },
-    },
-  }).find(({ name }) => name === 'Read')!;
+  const builtinRead = buildBuiltinTools().find(({ name }) => name === 'Read')!;
   const tools = [
     makeTool('Bash'),
     builtinRead,
@@ -174,28 +166,15 @@ test('WorkHub v2 can read its attachments without inheriting terminal, browser, 
     [control.name, tasks.name, 'Read', 'AskUserQuestion'],
   );
   const read = projected[2]!;
-  const context = {
-    sessionId: 'workhub',
-    runId: 'run',
-    turnId: 'turn',
-    cwd: '/workspace',
-    toolCallId: 'read',
-    abortSignal: new AbortController().signal,
-    emitOutput() {},
-  };
-  assert.deepEqual(await read.impl({ ref: 'maka://runtime/attachments/attachment-1' }, context), {
-    kind: 'text',
-    text: 'attachment contents',
-  });
-  assert.deepEqual(reads, [{ sessionId: 'workhub', artifactId: 'attachment-1' }]);
+  assert.equal(read, builtinRead, 'the profile must not replace Read with a resource wrapper');
+  const schema = read.parameters as z.ZodType;
+  assert.equal((await schema.safeParseAsync({ file_path: '/prepared/input.txt' })).success, true);
   for (const input of [
     { path: '/etc/passwd' },
-    { ref: 'maka://runtime/background-tasks/task-1' },
-    { ref: 'maka://runtime/attachments/a?session=other' },
-  ]) {
-    assert.throws(() => read.impl(input, context));
-  }
-  assert.equal(reads.length, 1);
+    { ref: 'maka://runtime/attachments/attachment-1' },
+    { file_path: '/prepared/input.txt', ref: '' },
+  ])
+    assert.equal((await schema.safeParseAsync(input)).success, false);
   assert.throws(
     () => projectHostedExecutionTools(tools.slice(0, 4), 'workhub-coordination-v2'),
     /Hosted tool profile is unavailable/,

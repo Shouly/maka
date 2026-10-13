@@ -56,7 +56,7 @@ export const SEND_USER_FILE_UNAVAILABLE =
 // and its `display` clause closes with "same as before this parameter existed",
 // a fact about the reference client's own history and not about this one.
 export const SEND_USER_FILE_DESCRIPTION = [
-  "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you're still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the current working directory.",
+  "Send files to the user. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you're still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the current working directory, including the current saved-file paths supplied with attachments and tool results. Delivery captures the bytes at the supplied path, just as ordinary filesystem readers see them.",
   '',
   'Add a `caption` when a one-liner of context helps ("the failing case is row 42", "before vs after"). Skip it if the file speaks for itself.',
   '',
@@ -64,7 +64,7 @@ export const SEND_USER_FILE_DESCRIPTION = [
   '',
   "Set `display` to choose how the file is presented. Use `'render'` when the user should see the content inline in the side panel right now — a chart, a rendered HTML page, a diagram, an image. Use `'attach'` when the file is something they'll save and open elsewhere — source code, a spreadsheet, a document for another app — and an inline preview would just be noise. Leave it unset to let the client decide by file type.",
   '',
-  "Files must already exist on the local filesystem — the tool sends files, it doesn't fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory.",
+  "Files must already exist in the execution filesystem — the tool sends existing files, it doesn't fetch URLs or render content. When unsure of a workspace path, verify with ls first; absolute paths avoid ambiguity about the working directory.",
   `Files are read under the current session permissions, including authorised paths outside the working directory. Each file must be at most ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB. A batch is delivered only after every file has been read and stored successfully.`,
   '',
   'Example: SendUserFile({ files: ["report.md"], caption: "Here\'s the report.", status: "normal" })',
@@ -115,7 +115,7 @@ export function buildSendUserFileTool(
           .array(z.string().min(1))
           .min(1)
           .describe(
-            'File paths (absolute or relative to cwd) to send to the user. Always pass an array, even for a single file.',
+            'File paths (absolute or relative to cwd), including current saved-file paths, to send to the user. Always pass an array, even for a single file.',
           ),
         status: z
           .enum(['normal', 'proactive'])
@@ -139,8 +139,9 @@ export function buildSendUserFileTool(
       // Every path is admitted before anything is recorded, so a bad path in
       // the list cannot leave a half-delivered set of cards behind.
       for (const requested of args.files) {
-        const path = resolveDeliveryPath(ctx.cwd, requested);
-        await admitDeliveryPath(filesystem, requested, ctx);
+        const resolved = requested;
+        const path = resolveDeliveryPath(ctx.cwd, resolved);
+        await admitDeliveryPath(filesystem, resolved, ctx);
         const mimeType = deliveryMimeType(path);
         candidates.push({
           kind: deliveryArtifactKind(path, mimeType),
@@ -148,7 +149,7 @@ export function buildSendUserFileTool(
           ...(mimeType ? { mimeType } : {}),
           source: 'user_delivery',
           ...(caption ? { summary: caption } : {}),
-          readContent: () => readDeliveryBytes(filesystem, requested, ctx),
+          readContent: () => readDeliveryBytes(filesystem, resolved, ctx),
         });
         paths.push(path);
       }
@@ -200,9 +201,7 @@ export function sendUserFileModelText(output: unknown): string {
   const files = deliveredFiles(output);
   if (!files) return 'Files delivered to user.';
   const header = `${files.length} file${files.length === 1 ? '' : 's'} delivered to user.`;
-  return [header, ...files.map((file) => `  ${file.path} → file_uuid: ${file.artifactId}`)].join(
-    '\n',
-  );
+  return [header, ...files.map((file) => `  ${file.name} (captured from ${file.path})`)].join('\n');
 }
 
 function deliveredFiles(output: unknown): SendUserFileResult['files'] | undefined {

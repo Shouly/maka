@@ -58,7 +58,6 @@ import {
   type RuntimeEventContent,
   type RuntimeEventRole,
 } from '@maka/core/runtime-event';
-import { formatAttachmentResourceRef } from '@maka/core/attachments';
 import type { AttachmentRef, DirectoryReference, QuoteRef } from '@maka/core/events';
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import type {
@@ -75,6 +74,8 @@ import {
 import { MATERIALIZED_IMAGE_TOKENS } from '@maka/core/attachments';
 import { estimateTokens, stableJsonLength, turnKey } from './context-budget-helpers.js';
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
+import { notificationFileBindings } from './file-resource-projection.js';
+import { fileNotificationModelText } from './conversation-copy-notifications.js';
 
 export const PROVIDER_REPLAY_PROJECTION_VERSION = 2;
 
@@ -327,6 +328,8 @@ export type RuntimeEventModelReplayItem =
       role: 'user' | 'assistant' | 'system';
       content: string;
       providerOptions?: NonNullable<ModelMessage['providerOptions']>;
+      /** Structured notification dependencies, not paths scraped from prose. */
+      fileBindings?: readonly import('./file-resource-projection.js').ModelFileBinding[];
       /** Original attachments (if any) so replay can render image parts. */
       attachments?: AttachmentRef[];
       /** Assistant step id (model-role text only); groups a step's parts. */
@@ -757,6 +760,7 @@ export function buildRuntimeEventModelReplayPlan(
         }
         const steeringReplay = event.content.steering === true && role === 'user';
         const assistantStepId = role === 'assistant' ? assistantReplayStepId(event) : undefined;
+        const fileBindings = notificationFileBindings(event);
         items.push({
           kind: 'text',
           invocationId: event.invocationId,
@@ -768,7 +772,8 @@ export function buildRuntimeEventModelReplayPlan(
           content:
             steeringReplay && event.author !== 'system'
               ? buildSteeringEnvelope(formatTextWithInlineRefs(event.content))
-              : formatTextWithInlineRefs(event.content),
+              : fileNotificationModelText(event, formatTextWithInlineRefs(event.content)),
+          ...(fileBindings.length ? { fileBindings } : {}),
           ...(steeringReplay ? { steering: { eventId: event.id } } : {}),
           ...(event.content.attachments ? { attachments: event.content.attachments } : {}),
           ...(event.content.providerOptions !== undefined
@@ -1224,28 +1229,24 @@ function formatDirectoryReferences(references: readonly DirectoryReference[]): s
   ].join('\n');
 }
 
-function formatAttachmentRefs(attachments: readonly AttachmentRef[]): string {
+export function formatAttachmentRefs(
+  attachments: readonly AttachmentRef[],
+  executionPaths?: ReadonlyMap<
+    AttachmentRef,
+    { path: string; readOnly: boolean; source: string } | null
+  >,
+): string {
   return attachments
     .map((attachment) => {
-      const resourceRef = formatAttachmentResourceRef(attachment.ref);
-      const readArgument = resourceRef
-        ? { ref: resourceRef }
-        : attachment.ref.kind === 'workspace_file'
-          ? { path: attachment.ref.relativePath }
-          : attachment.ref.kind === 'external_file'
-            ? { path: attachment.ref.absolutePath }
-            : null;
-      const access = readArgument
-        ? resourceRef
-          ? [
-              `Read argument: ${JSON.stringify(readArgument)}`,
-              ...(attachment.kind === 'image'
-                ? [`Markdown image source: ${JSON.stringify(resourceRef)}`]
-                : []),
-              'This is a Session resource, not a workspace file. Use the ref above; never use the display name as a path.',
-            ].join('\n')
-          : `Read argument: ${JSON.stringify(readArgument)}`
-        : 'The attachment content is unavailable to Read.';
+      const file = executionPaths?.get(attachment);
+      const access = file
+        ? [
+            `file_path: ${JSON.stringify(file.path)}`,
+            `source: ${JSON.stringify(file.source)}`,
+            `readOnly: ${file.readOnly}`,
+            'This is an ordinary execution file for Read, Grep, Bash or Python. readOnly reflects executor policy; OS permissions also apply. Copy saved inputs to the working directory before editing.',
+          ].join('\n')
+        : 'File path unavailable in this execution environment. Do not infer a path from the display name. Image content may still be supplied directly.';
       return [
         '<attachment>',
         access,

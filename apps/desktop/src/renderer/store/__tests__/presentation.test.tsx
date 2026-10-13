@@ -27,6 +27,7 @@ import Markdown from '../../components/ui/Markdown.js';
 import { TooltipProvider } from '../../components/ui/tooltip.js';
 import { PermissionModeMenu } from '../../components/composer/PermissionModeMenu.js';
 import { resolveCollaborationPermissionMode } from '@maka/core/collaboration';
+import type { TerminalSavedOutput } from '@maka/core/events';
 import { SessionRow } from '../../components/layout/sidebar-parts/SessionRow.js';
 import { PaletteResults } from '../../components/palette/CommandPalette.js';
 import { buildSessionListModel } from '../session-list-model.js';
@@ -1442,10 +1443,7 @@ test('a long tool output is watched at its tail while it runs, not only once it 
 // big the whole output is and that it is in a file, and offers the file. A
 // result with no saved file keeps the watched tail and the plain truncated
 // label, as before.
-function settledTerminal(
-  stdout: string,
-  savedOutput?: { path: string; chars: number; truncated: boolean },
-): ToolActivityItem {
+function settledTerminal(stdout: string, savedOutput?: TerminalSavedOutput): ToolActivityItem {
   return {
     toolUseId: 'tool-saved',
     toolName: 'Bash',
@@ -1471,11 +1469,9 @@ function settledTerminal(
   } as unknown as ToolActivityItem;
 }
 
-const SAVED_PATH = '/state/tool-results/session-1/result.txt';
+const SAVED_PATH = 'maka://runtime/attachments/saved-output';
 
-// The reveal is offered through the decision the session view makes: only
-// when the session's Host is on this machine, and only for a file in that
-// session's own folder.
+// Main resolves each resource using Session ownership and materializes it locally.
 const LOCAL_SESSION = { profileId: 'local', runtimeHostId: 'host-local' };
 const REMOTE_SESSION = { profileId: 'remote', runtimeHostId: 'host-remote' };
 const HOST_CATALOG = {
@@ -1499,17 +1495,13 @@ const HOST_CATALOG = {
 } as unknown as DesktopNewTaskCatalog;
 
 function savedOutputContext(
-  session: { profileId: string; runtimeHostId: string },
+  _session: { profileId: string; runtimeHostId: string },
   revealed: string[] = [],
   sessionId = 'session-1',
 ) {
   return {
     onOpenExternal: () => {},
-    savedOutputReveal: savedOutputRevealer(
-      sessionId,
-      sessionHostViewsClientPath(HOST_CATALOG, session),
-      (path) => revealed.push(path),
-    ),
+    savedOutputReveal: savedOutputRevealer(sessionId, (path) => revealed.push(path)),
   };
 }
 
@@ -1521,7 +1513,7 @@ test('a saved Bash output shows its start, its size, and where the file is', () 
       null,
       renderToolContent(
         settledTerminal('> maka@1.0.0 test\nfirst result line', {
-          path: SAVED_PATH,
+          ref: SAVED_PATH,
           chars: 40_123,
           truncated: false,
         }),
@@ -1549,20 +1541,57 @@ test('a saved Bash output shows its start, its size, and where the file is', () 
   assert.equal(revealed.length, 0, 'nothing is revealed until the button is pressed');
 });
 
-test('a saved Bash output offers no reveal for a Host on another machine', () => {
+test('a saved Bash ref renders a reveal action for the exact stable resource', () => {
+  const ref = 'maka://runtime/attachments/stable-saved-output';
+  const requested: string[] = [];
+  const revealed: string[] = [];
+  const document = renderTree(
+    createElement(
+      Fragment,
+      null,
+      renderToolContent(
+        settledTerminal('first saved line', { ref, chars: 40_123, truncated: false }),
+        {
+          onOpenExternal: () => {},
+          savedOutputReveal: (resource) => {
+            requested.push(resource);
+            return () => revealed.push(resource);
+          },
+        },
+      ),
+    ),
+  );
+  const copy = getTranscriptCopy('en');
+  assert.deepEqual(requested, [ref], 'the rendered card resolves the stable ref without a path');
+  assert.equal(
+    document.querySelector('[data-maka-saved-output]')?.textContent,
+    copy.result.savedOutput.full(40_123),
+  );
+  assert.deepEqual(
+    [...document.querySelectorAll('[data-maka-tool-handoff]')].map((button) => button.textContent),
+    [copy.delivery.showIn[detectPlatform()]],
+  );
+  assert.ok(document.documentElement.textContent?.includes('first saved line'));
+  assert.deepEqual(revealed, [], 'rendering the card does not reveal the resource');
+});
+
+test('a saved Bash resource can be materialized from a remote Host', () => {
   const render = (context: ReturnType<typeof savedOutputContext>) =>
     renderTree(
       createElement(
         Fragment,
         null,
         renderToolContent(
-          settledTerminal('head', { path: SAVED_PATH, chars: 40_123, truncated: false }),
+          settledTerminal('head', { ref: SAVED_PATH, chars: 40_123, truncated: false }),
           context,
         ),
       ),
     );
   const remote = render(savedOutputContext(REMOTE_SESSION));
-  assert.equal(remote.querySelector('[data-maka-tool-handoff]'), null, 'remote: no button');
+  assert.ok(
+    remote.querySelector('[data-maka-tool-handoff]'),
+    'main resolves and materializes remote resources',
+  );
   assert.ok(
     remote.querySelector('[data-maka-saved-output]'),
     'the saved line still says the output was saved',
@@ -1586,45 +1615,33 @@ test('a saved Bash output offers no reveal for a Host on another machine', () =>
   assert.equal(sessionHostViewsClientPath(reconnecting, LOCAL_SESSION), false);
 });
 
-test("a branch reveals its own copy of a saved output, not the source session's file", () => {
-  const render = (path: string, sessionId: string) =>
-    renderTree(
+test('branches reveal the same immutable resource ref without exposing path fallbacks', () => {
+  for (const sessionId of ['session-1', 'branch-1', 'branch-2']) {
+    const revealed: string[] = [];
+    const context = savedOutputContext(LOCAL_SESSION, revealed, sessionId);
+    const document = renderTree(
       createElement(
         Fragment,
         null,
         renderToolContent(
-          settledTerminal('head', { path, chars: 40_123, truncated: false }),
-          savedOutputContext(LOCAL_SESSION, [], sessionId),
+          settledTerminal('head', { ref: SAVED_PATH, chars: 40_123, truncated: false }),
+          context,
         ),
       ),
     );
-  // A branch names its own copy of each saved output, in its own folder.
-  const copied = render('/state/tool-results/branch-1/result.txt', 'branch-1');
-  assert.ok(copied.querySelector('[data-maka-tool-handoff]'), 'the branch reveals its copy');
-  // A path the copy could not bring, its file already gone, still names the
-  // source session's folder, which main does not reveal for the branch.
-  const inherited = render(SAVED_PATH, 'branch-1');
-  assert.equal(inherited.querySelector('[data-maka-tool-handoff]'), null, 'no button');
-  assert.ok(
-    inherited.querySelector('[data-maka-saved-output]'),
-    'the saved line still says the output was saved',
-  );
-  assert.ok(render(SAVED_PATH, 'session-1').querySelector('[data-maka-tool-handoff]'));
-
-  const revealed: string[] = [];
-  const reveal = savedOutputRevealer('session-1', true, (path) => revealed.push(path));
-  reveal(SAVED_PATH)?.();
-  assert.deepEqual(revealed, [SAVED_PATH], 'the reveal is of the path the block shows');
-  const windowsPath =
-    'C:\\Users\\me\\AppData\\Roaming\\Maka\\workspaces\\default\\tool-results\\session-1\\r.txt';
-  assert.ok(reveal(windowsPath), 'a Windows path is read by its folder too');
-  assert.equal(reveal('/state/tool-results/other-session/result.txt'), undefined);
-  assert.equal(reveal('/state/tool-results/session-1'), undefined, 'the folder itself is no file');
-  assert.equal(
-    savedOutputRevealer('session-1', false, () => assert.fail('never revealed'))(SAVED_PATH),
-    undefined,
-    'a Host on another machine reveals nothing',
-  );
+    assert.ok(document.querySelector('[data-maka-tool-handoff]'));
+    assert.ok(document.querySelector('[data-maka-saved-output]'));
+    context.savedOutputReveal(SAVED_PATH)?.();
+    assert.deepEqual(revealed, [SAVED_PATH]);
+    for (const path of [
+      '/state/tool-results/source/result.txt',
+      'C:\\state\\output.txt',
+      'file:///tmp/output.txt',
+      'maka://runtime/task-outputs/live',
+    ]) {
+      assert.equal(context.savedOutputReveal(path), undefined, path);
+    }
+  }
 });
 
 test('a saved output not kept whole says so without naming a size limit', () => {
@@ -1633,7 +1650,7 @@ test('a saved output not kept whole says so without naming a size limit', () => 
       Fragment,
       null,
       renderToolContent(
-        settledTerminal('head', { path: SAVED_PATH, chars: 67_108_000, truncated: true }),
+        settledTerminal('head', { ref: SAVED_PATH, chars: 67_108_000, truncated: true }),
         savedOutputContext(LOCAL_SESSION),
       ),
     ),
@@ -1671,7 +1688,7 @@ test('a saved output too long for the block keeps its head, and an unsaved one i
   const lines = Array.from({ length: TOOL_LINE_CAP + 40 }, (_, index) => `line ${index}`);
   const first = lines[0]!;
   const last = lines.at(-1)!;
-  const render = (savedOutput?: { path: string; chars: number; truncated: boolean }) => {
+  const render = (savedOutput?: TerminalSavedOutput) => {
     const document = renderTree(
       createElement(
         Fragment,
@@ -1692,7 +1709,7 @@ test('a saved output too long for the block keeps its head, and an unsaved one i
     return { document, body, shown, note };
   };
 
-  const saved = render({ path: SAVED_PATH, chars: 900_000, truncated: false });
+  const saved = render({ ref: SAVED_PATH, chars: 900_000, truncated: false });
   assert.equal(saved.shown[0], first, 'a saved output is shown from its first line');
   assert.ok(!saved.shown.includes(last), 'what the block drops is the end of the preview');
   assert.equal(

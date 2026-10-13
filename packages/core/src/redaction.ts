@@ -273,7 +273,19 @@ export function classifyGeneralizedError(error: unknown): GeneralizedErrorClass 
   const message = error instanceof Error ? error.message : String(error);
   const lower = redactSecrets(message).toLowerCase();
   if (lower.includes('timeout')) return 'timeout';
-  if (lower.includes('429') || lower.includes('rate')) return 'rate_limited';
+  // Status codes need HTTP/status context (or a leading bare status), not a
+  // substring of a UUID or a file path. Likewise, "generate" and "enumerate"
+  // are not provider rate-limit signals.
+  if (
+    /^\s*429(?:\s|:|$)/.test(lower) ||
+    /\b(?:http(?:\/\d(?:\.\d)*)?(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|statuscode)\b["']?\s*[:=]?\s*429\b/.test(
+      lower,
+    ) ||
+    /\brate[\s_-]+limit(?:ed|ing|s)?(?:\b|_)|\brate[\s_-]+exceeded\b|\bratelimit(?:error|exceeded)?\b|\btoo\s+many\s+requests\b/.test(
+      lower,
+    )
+  )
+    return 'rate_limited';
   if (lower.includes('401') || lower.includes('403') || isAuthenticationErrorText(lower))
     return 'auth_failed';
   if (/\b5\d\d\b/.test(lower)) return 'provider_error';

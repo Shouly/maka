@@ -22,7 +22,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { restoreArtifactV1Shape } from './fixtures/artifact-v1.js';
 import type { SessionHeader } from '@maka/core/session';
 import type { RuntimeReadModelSessionView } from '@maka/runtime/runtime-read-model';
 import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
@@ -39,8 +38,8 @@ const connectionContext: ConnectionContext = {
   acquireResidency: () => ({ release: () => undefined }),
 };
 
-test('Session recap retries preserve the original result across a v1 upgrade', async () => {
-  await withHarness(async ({ coordinator, modelCalls, reopenFromV1 }) => {
+test('Session recap retries preserve the immutable original result across store reopen', async () => {
+  await withHarness(async ({ coordinator, modelCalls, reopen }) => {
     const input = { sessionId: 'session-1', effectId: 'effect-1', reason: 'manual' as const };
     const generated = {
       ok: true as const,
@@ -67,10 +66,10 @@ test('Session recap retries preserve the original result across a v1 upgrade', a
     assert.equal(modelCalls.count, 1);
 
     await coordinator.close();
-    const upgraded = await reopenFromV1();
+    const reopened = await reopen();
     let archived = false;
     const successor = createCoordinator(
-      upgraded,
+      reopened,
       {
         generateTitle: async () => undefined,
         generateRecap: async () => assert.fail('a durable exact retry must not call the model'),
@@ -113,12 +112,12 @@ test('Session recap retries preserve the original result across a v1 upgrade', a
       },
     );
 
-    const records = await upgraded.listPage('session-1', { offset: 0, limit: 10 });
+    const records = await reopened.listPage('session-1', { offset: 0, limit: 10 });
     assert.equal(records.records.length, 2);
     for (const record of records.records) {
       assert.equal(record.source, 'session_effect');
       assert.equal(
-        (await upgraded.deleteUserArtifactInSession('session-1', record.id)).kind,
+        (await reopened.deleteUserArtifactInSession('session-1', record.id)).kind,
         'protected',
       );
     }
@@ -127,7 +126,7 @@ test('Session recap retries preserve the original result across a v1 upgrade', a
       generated,
     );
     await successor.close();
-    upgraded.close();
+    reopened.close();
   });
 });
 
@@ -432,7 +431,7 @@ async function withHarness(
     coordinator: HostSessionEffectCoordinator;
     modelCalls: { count: number };
     admission: SessionAdmissionGate;
-    reopenFromV1(): Promise<Awaited<ReturnType<typeof openInteractiveArtifactStoreForWrite>>>;
+    reopen(): Promise<Awaited<ReturnType<typeof openInteractiveArtifactStoreForWrite>>>;
   }) => Promise<void>,
   overrideModel?: HostSessionEffectModel,
   options?: CoordinatorOptions,
@@ -465,9 +464,8 @@ async function withHarness(
       coordinator,
       modelCalls,
       admission,
-      reopenFromV1: async () => {
+      reopen: async () => {
         store.close();
-        restoreArtifactV1Shape(root);
         return openInteractiveArtifactStoreForWrite(owner.lease);
       },
     });

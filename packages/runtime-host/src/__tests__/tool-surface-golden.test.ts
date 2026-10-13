@@ -59,7 +59,7 @@ test('the interactive tool surface matches its golden file', {
       readPromptProjection: async () => ({ revision: null }),
     } as unknown as HostMemoryCoordinator,
     sessionTask: {} as SessionTaskToolStore,
-    builtinTools: {},
+    builtinTools: {}, // Include the existing file/shell surface, with no resource-tool adapter.
   });
   const tools = [...composer.tools].sort((left, right) => left.name.localeCompare(right.name));
   const surface = requestCompositionToolSchemas(

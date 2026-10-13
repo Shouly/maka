@@ -863,6 +863,12 @@ interface SessionManagerBaseDeps {
   /** Host-owned filesystem isolation for worktree-backed child Sessions. */
   worktreeChildExecutor?: SubagentWorktreeExecutor;
   listArtifactsForTurn?: (sessionId: string, turnId: string) => Promise<ArtifactRecord[]>;
+  /** Commit output ownership at hand-back, independently of any later file reads. */
+  retainChildArtifacts?: (
+    parentSessionId: string,
+    childSessionId: string,
+    artifactIds: readonly string[],
+  ) => Promise<readonly string[]>;
   /** Durable publication boundary for terminal worktree-child patches. */
   publishChildWorkspacePatch?: (input: {
     sessionId: string;
@@ -1094,6 +1100,40 @@ export class SessionManager {
       }
     }
     return artifacts.filter(isArtifactChildResultOutput);
+  }
+
+  /** Called only by a formal result/notification publisher, never by a file or status read. */
+  private async retainChildOutputs(
+    receiverSessionId: string,
+    childSessionId: string,
+    artifacts: readonly ArtifactRecord[],
+  ): Promise<ArtifactRecord[]> {
+    const outputs = artifacts.filter(isArtifactChildResultOutput);
+    if (outputs.length === 0) return [];
+    if (!this.deps.retainChildArtifacts)
+      throw new Error('Child file hand-back is not available in this execution environment');
+    const retained = new Set(
+      await this.deps.retainChildArtifacts(
+        receiverSessionId,
+        childSessionId,
+        outputs.map((artifact) => artifact.id),
+      ),
+    );
+    return outputs.filter((artifact) => retained.has(artifact.id));
+  }
+
+  private async handBackChildTurnArtifacts(
+    receiverSessionId: string,
+    childSessionId: string,
+    turnId: string,
+    status: RunLifecycleStatus,
+  ): Promise<ArtifactRecord[]> {
+    if (!isTerminalRunStatus(status)) return [];
+    return this.retainChildOutputs(
+      receiverSessionId,
+      childSessionId,
+      await this.finalizeAndListChildTurnArtifacts(childSessionId, turnId, status),
+    );
   }
 
   /**
@@ -2557,6 +2597,7 @@ export class SessionManager {
       try {
         record = {
           ...(await this.#projectChildOutcome({
+            parentSessionId: input.parentSessionId,
             child,
             snapshot,
             turnId: identity.turnId,
@@ -2604,6 +2645,7 @@ export class SessionManager {
 
   /** The outcome facts of one finished child Turn. */
   async #projectChildOutcome(input: {
+    readonly parentSessionId: string;
     readonly child: SessionHeader;
     readonly snapshot: NonNullable<SessionHeader['subagentRuntime']>;
     readonly turnId: string;
@@ -2618,7 +2660,12 @@ export class SessionManager {
     const facts = run ? invocationListingFacts(run) : undefined;
     const failureClass = facts?.failureClass ?? summary.failureClass;
     const artifacts = facts
-      ? await this.finalizeAndListChildTurnArtifacts(child.id, input.turnId, facts.status)
+      ? await this.handBackChildTurnArtifacts(
+          input.parentSessionId,
+          child.id,
+          input.turnId,
+          facts.status,
+        )
       : [];
     return {
       childSessionId: child.id,
@@ -2931,6 +2978,20 @@ export class SessionManager {
       if (!run?.terminalEvent) continue;
       if (child.subagentNotifiedTurnId === run.turnId) continue;
       const facts = invocationListingFacts(run);
+      let outputs: ArtifactRecord[];
+      try {
+        // Recovery publishes a hand-back too. Commit the receiver's ownership
+        // before offering its notification. Do not finalize child workspaces
+        // while holding the parent's step-boundary locks.
+        outputs = await this.retainChildOutputs(
+          parentSessionId,
+          child.id,
+          await (this.deps.listArtifactsForTurn?.(child.id, run.turnId) ?? Promise.resolve([])),
+        );
+      } catch {
+        readEveryChild = false;
+        continue;
+      }
       owed.push({
         childSessionId: child.id,
         parentSessionId,
@@ -2943,14 +3004,7 @@ export class SessionManager {
         status: agentRunStatusForSpawnResult(facts.status),
         permissionMode: facts.permissionMode ?? child.permissionMode,
         ...(await this.#childTurnReport(child.id, run.turnId, run.runId)),
-        // What the child left behind. Only read here, never finalized: this
-        // scan runs at a step boundary of the PARENT, and finishing a child
-        // off from there would reach for locks its own run still holds.
-        artifactIds: (
-          await (this.deps.listArtifactsForTurn?.(child.id, run.turnId) ?? Promise.resolve([]))
-            .then((artifacts) => artifacts)
-            .catch(() => [])
-        ).map((artifact) => artifact.id),
+        artifactIds: outputs.map((artifact) => artifact.id),
         startedAt: facts.createdAt,
         completedAt: facts.completedAt ?? facts.updatedAt,
         durationMs: facts.durationMs ?? 0,
@@ -3689,7 +3743,8 @@ export class SessionManager {
     this.assertClaimedAgentGraphRun(child, snapshot, claim, completedRun);
     const completedFacts = invocationListingFacts(completedRun);
     const failureClass = completedFacts.failureClass ?? summary.failureClass;
-    const artifacts = await this.finalizeAndListChildTurnArtifacts(
+    const artifacts = await this.handBackChildTurnArtifacts(
+      child.subagentParent.parentSessionId,
       child.id,
       claim.targetTurnId,
       completedFacts.status,
@@ -4156,7 +4211,12 @@ export class SessionManager {
     const facts = invocationListingFacts(run);
     const [runtimeEvents, artifacts] = await Promise.all([
       this.deps.runtimeEventStore.readRuntimeEvents(child.id, run.runId),
-      this.finalizeAndListChildTurnArtifacts(child.id, run.turnId, facts.status),
+      this.handBackChildTurnArtifacts(
+        child.subagentParent!.parentSessionId,
+        child.id,
+        run.turnId,
+        facts.status,
+      ),
     ]);
     const runtimeText = runtimeEvents.filter(
       (
@@ -4321,11 +4381,11 @@ export class SessionManager {
       this.deps.runtimeEventStore,
       { sessionId: invocation.sessionId, runId: invocation.runId, invocation },
     );
-    const artifacts = await this.finalizeAndListChildTurnArtifacts(
-      invocation.sessionId,
-      invocation.turnId,
-      runtimeInvocationOutcome(inspected.invocation) ?? 'running',
-    );
+    // AgentOutput is a query: it can show files already handed to the caller,
+    // but cannot finalize a child or acquire files by following its lineage.
+    const artifacts = (
+      await (this.deps.listArtifactsForTurn?.(sessionId, invocation.turnId) ?? Promise.resolve([]))
+    ).filter(isArtifactChildResultOutput);
     const maxEvents = normalizeAgentOutputMaxEvents(input.maxEvents);
     const maxBytes = normalizeAgentOutputMaxBytes(input.maxBytes);
     const view = input.view ?? 'runtime_events';
@@ -4909,6 +4969,21 @@ export class SessionManager {
     const visited = new Set<string>();
     while (ownerSessionId && !visited.has(ownerSessionId)) {
       visited.add(ownerSessionId);
+      // Historical lineage can name a deleted Session. Check its durable
+      // existence before inspecting a shell record, which may still be cached.
+      // Only an absent ancestor is optional; actual storage failures propagate.
+      let ownerHeader: SessionHeader;
+      try {
+        ownerHeader = await this.deps.store.readHeader(ownerSessionId);
+      } catch (error) {
+        if (
+          isNotFoundError(error) ||
+          (error instanceof Error && 'code' in error && error.code === 'session_not_found')
+        ) {
+          return undefined;
+        }
+        throw error;
+      }
       try {
         return {
           sessionId: ownerSessionId,
@@ -4916,13 +4991,7 @@ export class SessionManager {
         };
       } catch (error) {
         if (!isNotFoundError(error)) throw error;
-        try {
-          const ownerHeader = await this.deps.store.readHeader(ownerSessionId);
-          ownerSessionId = ownerHeader.revisionParentSessionId ?? ownerHeader.parentSessionId;
-        } catch (headerError) {
-          if (isNotFoundError(headerError)) return undefined;
-          throw headerError;
-        }
+        ownerSessionId = ownerHeader.revisionParentSessionId ?? ownerHeader.parentSessionId;
       }
     }
     return undefined;

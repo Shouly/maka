@@ -82,8 +82,8 @@ export interface ToolContentContext {
   readonly onOpenArtifact?: (artifactId: string) => void;
   /** Opens the Scheduled tasks page on one task, from the card that made it. */
   readonly onOpenScheduledTask?: (taskId: string) => void;
-  /** Reveals a delivered file, by the path it was sent from. */
-  readonly onShowDeliveredFile?: (path: string | undefined) => void;
+  /** Reveals the immutable delivered file by its stable resource id. */
+  readonly onShowDeliveredFile?: (artifactId: string) => void;
   /**
    * The reveal of the file a Bash output too long to show was saved to, or
    * undefined when that file cannot be revealed from here (see
@@ -160,12 +160,7 @@ export function renderToolContent(item: ToolActivityItem, context: ToolContentCo
       ) : null;
     case 'grep': {
       const grep = result?.kind === 'json' ? readGrepResult(result.value) : undefined;
-      return grep ? (
-        <GrepResult
-          result={grep}
-          {...(context.onOpenFile ? { onOpenFile: context.onOpenFile } : {})}
-        />
-      ) : null;
+      return grep ? <GrepResult result={grep} /> : null;
     }
     case 'glob': {
       const glob = result?.kind === 'json' ? readGlobResult(result.value) : undefined;

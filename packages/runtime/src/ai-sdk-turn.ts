@@ -178,7 +178,11 @@ import {
 } from './history-compact-checkpoint.js';
 import { resolveSelectedModelContextWindow } from './context-budget-policy.js';
 import type { AiSdkBackendInput, ResolvedSystemPrompt } from './ai-sdk-backend.js';
-import { injectionPosition, renderPlacedBlock } from './injection/turn-injections.js';
+import {
+  injectionPosition,
+  renderPlacedBlock,
+  type InjectionContext,
+} from './injection/turn-injections.js';
 import {
   appendUserMessageBlocks,
   prependUserMessageBlocks,
@@ -538,6 +542,7 @@ export class AiSdkTurn {
   readonly runId: string | undefined;
   readonly orchestration: EffectiveOrchestration;
   readonly toolRuntime: ToolRuntime;
+  private fileEnvironmentPreparation?: Promise<InjectionContext | undefined>;
 
   constructor(
     private readonly deps: AiSdkTurnDependencies,
@@ -578,18 +583,25 @@ export class AiSdkTurn {
     const blocks = { before: [] as string[], after: [] as string[] };
     const injections = this.deps.backend.injections;
     const record = this.deps.backend.recordInjection;
-    if (!injections || !record || input.continuation) return blocks;
+    if (!injections || !record) return blocks;
     const active = new Set(plan.gating?.activeNames() ?? plan.activeTools);
     const held = [...(plan.gating?.gatedNames ?? plan.deferredNames ?? [])].filter(
       (name) => !active.has(name),
     );
     const prior = input.runtimeContext ?? [];
+    this.fileEnvironmentPreparation ??=
+      this.deps.backend.prepareFileEnvironment?.(prior) ?? Promise.resolve(undefined);
+    const fileEnvironment = await this.fileEnvironmentPreparation;
+    if (input.continuation && !fileEnvironment) return blocks;
     const planned = injections.planTurn(prior, {
       now: new Date(this.deps.now()),
-      datedByPrompt: prior.length === 0 && resolved.dated === true,
+      datedByPrompt: Boolean(input.continuation) || (prior.length === 0 && resolved.dated === true),
       ...(resolved.childAgent ? { childAgent: true } : {}),
-      contexts: resolved.contexts ?? [],
-      deferredToolNames: held,
+      contexts: [
+        ...(input.continuation ? [] : (resolved.contexts ?? [])),
+        ...(fileEnvironment ? [fileEnvironment] : []),
+      ],
+      deferredToolNames: input.continuation ? [] : held,
     });
     for (const injection of planned) {
       await record(this.turnId, injection);
@@ -1090,6 +1102,7 @@ export class AiSdkTurn {
               input.attachments,
               input.directoryReferences,
               input.quotes,
+              input.headAnchorRuntimeEvent,
             );
         const messages =
           currentUserContent === undefined
@@ -3053,7 +3066,11 @@ export class AiSdkTurn {
         author: 'system',
         origin: { kind: 'background_task', ref: lease.id, toolUseId: lease.toolUseId },
       } satisfies SessionEvent);
-      this.injectedSteeringMessages.push(steeringModelMessage(eventId, lease.text));
+      const notificationText = await this.deps.messageProjection.materializeTaskNotification(
+        lease.text,
+        { kind: 'background_task', ref: lease.id, toolUseId: lease.toolUseId },
+      );
+      this.injectedSteeringMessages.push(steeringModelMessage(eventId, notificationText));
       // The event is durable, so the model has been told whatever happens
       // next. A bookkeeping write that fails here must not take the turn down
       // with it: the worst it costs is the same notification once more.

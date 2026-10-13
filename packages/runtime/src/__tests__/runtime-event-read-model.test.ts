@@ -243,7 +243,7 @@ function equivalentLegacyMessages(): StoredMessage[] {
 }
 
 describe('projectRuntimeEventsToStoredMessages', () => {
-  test('exposes a session image ref as a Markdown image source to the model', () => {
+  test('retains image identity internally without inventing a usable path before preparation', () => {
     const replay = buildRuntimeEventModelReplayPlan([
       ev({
         role: 'user',
@@ -272,7 +272,7 @@ describe('projectRuntimeEventsToStoredMessages', () => {
     assert.equal(item?.kind, 'text');
     assert.match(
       item?.kind === 'text' ? item.content : '',
-      /Markdown image source: "maka:\/\/runtime\/attachments\/attachment-123"/,
+      /File path unavailable in this execution environment/,
     );
   });
 

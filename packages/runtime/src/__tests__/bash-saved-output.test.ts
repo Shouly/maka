@@ -22,10 +22,15 @@ import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
+import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
+import { parseAttachmentResourceRef } from '@maka/core/attachments';
+import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
+import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
+import { buildManagedBashTool } from '../shell-tools.js';
 import type { ShellRunStore } from '@maka/core/shell-run';
 import { createSqliteShellRunStore } from '@maka/storage/shell-run-store';
 
-import { projectBashToolResultForModel } from '../bash-model-output.js';
+import { projectBashToolResultForModel as projectPublishedResult } from '../bash-model-output.js';
 import { ShellRunProcessManager } from '../shell-run-manager.js';
 import { defaultShellPlan } from '../shell-detect.js';
 
@@ -120,11 +125,11 @@ describe('a foreground command too long to show is saved to a file', () => {
 
       const path = join(results, 'session-1', 'run-1.txt');
       assert.equal(result.status, 'completed');
-      assert.equal(result.savedOutput?.path, path);
-      assert.equal(result.savedOutput?.truncated, false);
+      assert.equal(result.outputSpool?.path, path);
+      assert.equal(result.outputSpool?.truncated, false);
       const saved = await readFile(path, 'utf8');
       assert.equal(saved, `${lines.join('\n')}\ntoken: [redacted]`);
-      assert.equal(result.savedOutput?.chars, saved.length);
+      assert.equal(result.outputSpool?.chars, saved.length);
       // The working files are gone; only the saved result stays.
       assert.deepEqual(await rootEntries(results), ['session-1']);
       assert.deepEqual(await readdir(join(results, 'session-1')), ['run-1.txt']);
@@ -134,7 +139,7 @@ describe('a foreground command too long to show is saved to a file', () => {
       assert.equal(result.output.stderr, '');
       assert.equal(
         projectBashToolResultForModel(result),
-        `Output too long to show (${saved.length.toLocaleString('en-US')} characters). The full output is saved to ${path}; read it with Read or search it with Grep.\n\nPreview (first 2,000 characters):\n${saved.slice(0, 2_000)}`,
+        `Output too long to show (${saved.length.toLocaleString('en-US')} characters). The full output is saved to maka://runtime/attachments/published-output; use its current saved-file path with Read(file_path, offset, limit), Grep(path), Bash or Python. Copy it to the working directory before editing.\n\nPreview (first 2,000 characters):\n${saved.slice(0, 2_000)}`,
       );
     },
   );
@@ -143,7 +148,7 @@ describe('a foreground command too long to show is saved to a file', () => {
     const results = await directory('maka-tool-results-');
     const { manager: target, cwd } = await manager({ toolResultRoot: results });
     const result = await run(target, cwd, nodeCommand(`process.stdout.write('x'.repeat(30000));`));
-    assert.equal(result.savedOutput, undefined);
+    assert.equal(result.outputSpool, undefined);
     assert.equal(result.output.mode === 'pipes' && result.output.stdout, 'x'.repeat(30_000));
     // No Session folder: nothing was saved.
     assert.deepEqual(await rootEntries(results), []);
@@ -158,7 +163,7 @@ describe('a foreground command too long to show is saved to a file', () => {
       `${nodeCommand(`process.stdout.write('g'.repeat(30001));`)}; grep -q needle /dev/null`,
     );
     assert.equal(result.exitCode, 1);
-    assert.equal(result.savedOutput?.chars, 30_001);
+    assert.equal(result.outputSpool?.chars, 30_001);
     assert.match(String(projectBashToolResultForModel(result)), /^Exit code 1\nOutput too long/u);
   });
 
@@ -176,7 +181,7 @@ describe('a foreground command too long to show is saved to a file', () => {
         ),
       );
       assert.equal(result.status, 'failed');
-      assert.equal(result.savedOutput, undefined);
+      assert.equal(result.outputSpool, undefined);
       assert.equal(
         projectBashToolResultForModel(result),
         `Exit code 3\n${'H'.repeat(5_000)}\n[... 20,000 characters omitted ...]\n${'T'.repeat(5_000)}`,
@@ -203,7 +208,7 @@ describe('a foreground command too long to show is saved to a file', () => {
           `const out = []; for (let i = 1; i <= 10000; i++) out.push('line ' + i); process.stdout.write(out.join('\\n') + '\\n'); process.exitCode = 3;`,
         ),
       );
-      assert.equal(result.savedOutput, undefined);
+      assert.equal(result.outputSpool, undefined);
       assert.equal(
         projectBashToolResultForModel(result),
         `Exit code 3\n${full.slice(0, 5_000)}\n[... ${(full.length - 10_000).toLocaleString('en-US')} characters omitted ...]\n${full.slice(-5_000)}`,
@@ -239,7 +244,7 @@ describe('a foreground command too long to show is saved to a file', () => {
     );
     const timedOut = await run(target, cwd, printThenWait, { timeoutMs: 500 });
     assert.equal(timedOut.status, 'timed_out');
-    assert.equal(timedOut.savedOutput, undefined);
+    assert.equal(timedOut.outputSpool, undefined);
     assert.deepEqual(await rootEntries(results), []);
 
     const controller = new AbortController();
@@ -262,7 +267,7 @@ describe('a foreground command too long to show is saved to a file', () => {
         cwd,
         nodeCommand(`process.stdout.write('v'.repeat(40000));`),
       );
-      assert.equal(result.savedOutput, undefined);
+      assert.equal(result.outputSpool, undefined);
       assert.equal(
         result.output.mode === 'pipes' && result.output.stdout,
         `${'v'.repeat(15_000)}\n[... 10,000 characters omitted ...]\n${'v'.repeat(15_000)}`,
@@ -284,7 +289,7 @@ describe('a foreground command too long to show is saved to a file', () => {
         cwd,
         nodeCommand(`process.stdout.write('v'.repeat(40000));`),
       );
-      assert.equal(result.savedOutput, undefined);
+      assert.equal(result.outputSpool, undefined);
       assert.match(
         String(result.output.mode === 'pipes' && result.output.stdout),
         /\n\[\.\.\. 10,000 characters omitted \.\.\.\]\n/u,
@@ -317,7 +322,7 @@ describe('a foreground command too long to show is saved to a file', () => {
         cwd,
         nodeCommand(`process.stdout.write('v'.repeat(40000));`),
       );
-      assert.equal(result.savedOutput, undefined);
+      assert.equal(result.outputSpool, undefined);
       assert.equal(
         result.output.mode === 'pipes' && result.output.stdout,
         `${'v'.repeat(15_000)}\n[... 10,000 characters omitted ...]\n${'v'.repeat(15_000)}`,
@@ -348,3 +353,83 @@ describe('a foreground command too long to show is saved to a file', () => {
     assert.deepEqual(await rootEntries(results), []);
   });
 });
+
+test(
+  'Hosted Bash returns a committed stable resource and retires its transient spool',
+  posixOnly,
+  async () => {
+    const results = await directory('maka-bash-resource-results-');
+    const { manager: target, cwd } = await manager({ toolResultRoot: results });
+    const stateRoot = await directory('maka-bash-resource-store-');
+    const owner = await tryAcquireInteractiveRootOwner(
+      await resolveStorageRoot({ path: stateRoot, kind: 'interactive' }),
+    );
+    assert.ok(owner);
+    const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+    try {
+      const command = nodeCommand("process.stdout.write('output line\\n'.repeat(6000))");
+      const raw = await buildManagedBashTool(target).impl(
+        { command },
+        {
+          sessionId: 'session-1',
+          turnId: 'turn-1',
+          toolCallId: 'bash-output',
+          cwd,
+          abortSignal: new AbortController().signal,
+          emitOutput: () => {},
+          recordArtifacts: async (candidates) =>
+            artifacts.createBatch(
+              candidates.map((candidate) => ({
+                sessionId: 'session-1',
+                turnId: 'turn-1',
+                name: candidate.name,
+                kind: candidate.kind,
+                source: candidate.source!,
+                mimeType: candidate.mimeType,
+                readContent: async () => candidate.content!,
+              })),
+            ),
+        },
+      );
+      const result = decodeCanonicalToolResultContent(raw);
+      assert.equal(result.kind, 'terminal');
+      assert.ok(result.kind === 'terminal' && result.savedOutput?.ref);
+      const id = parseAttachmentResourceRef(result.savedOutput.ref)!.artifactId;
+      assert.equal(result.exitCode, 0);
+      assert.deepEqual(await artifacts.readTextInSession('session-1', id), {
+        ok: true,
+        text: 'output line\n'.repeat(6000).trimEnd(),
+      });
+      assert.deepEqual(await readdir(join(results, 'session-1')), []);
+      assert.match(
+        JSON.stringify(projectBashToolResultForModel(result)),
+        /maka:\/\/runtime\/attachments\//,
+      );
+      assert.doesNotMatch(JSON.stringify(result), new RegExp(results));
+    } finally {
+      await target.terminateAll();
+      artifacts.close();
+      await owner.close();
+    }
+  },
+);
+
+// Model projection fixtures begin after publication. The producer-only spool
+// is intentionally not part of the durable result or its model-visible ref.
+function projectBashToolResultForModel(
+  result: import('../bash-output-limits.js').ProducedTerminalResult,
+) {
+  const { outputSpool, ...terminal } = result;
+  return projectPublishedResult(
+    outputSpool
+      ? {
+          ...terminal,
+          savedOutput: {
+            ref: 'maka://runtime/attachments/published-output',
+            chars: outputSpool.chars,
+            truncated: outputSpool.truncated,
+          },
+        }
+      : terminal,
+  );
+}

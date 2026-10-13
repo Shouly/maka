@@ -18,7 +18,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -1461,10 +1461,10 @@ async function hostBounds(received: McpCallResult): Promise<{ notice: string; fi
   const root = await mkdtemp(join(tmpdir(), 'maka-desktop-mcp-'));
   try {
     const [hostTool] = buildMcpTools(mcpProvider(received), {
-      toolResultRoot: root,
       executionLocation: 'remote',
     });
-    const output = (await hostTool!.impl(
+    let file = '';
+    const output = await hostTool!.impl(
       {},
       {
         sessionId: 'session-1',
@@ -1473,11 +1473,19 @@ async function hostBounds(received: McpCallResult): Promise<{ notice: string; fi
         toolCallId: 'tool-call-1',
         abortSignal: new AbortController().signal,
         emitOutput() {},
+        recordArtifacts: async (candidates) => {
+          assert.equal(candidates.length, 1);
+          file = String(candidates[0]!.content);
+          return [{ id: 'native-mcp-output', sessionId: 'session-1', turnId: 'turn-1', createdAt: 1, name: 'output.txt', kind: 'file', source: 'saved_tool_output', sizeBytes: Buffer.byteLength(file), relativePath: 'private-test-locator' }];
+        },
       },
-    )) as McpCallResult;
-    const notice = output.content[0]?.type === 'text' ? output.content[0].text : '';
-    const path = /saved to (\S+);/u.exec(notice)?.[1] ?? assert.fail(`Not saved: ${notice}`);
-    return { notice, file: await readFile(path, 'utf8') };
+    );
+    const model = await hostTool!.toModelOutput!({ toolCallId: 'tool-call-1', input: {}, output });
+    assert.ok(model?.type === 'content');
+    const notice = model.value.map((part) => part.type === 'text' ? part.text : '').join('');
+    assert.deepEqual((output as { fileRefs: string[] }).fileRefs, ['maka://runtime/attachments/native-mcp-output']);
+    assert.match(notice, /maka:\/\/runtime\/attachments\/native-mcp-output/);
+    return { notice, file };
   } finally {
     await rm(root, { recursive: true, force: true });
   }

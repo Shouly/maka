@@ -183,6 +183,7 @@ export type SessionBundleImportIpcResult =
   | { readonly ok: true; readonly sessionCount: number }
   | SessionBundleFailure;
 import type {
+  DesktopSessionActionResult,
   DesktopSessionSummary,
   DesktopSessionUpdateResult,
 } from '../shared/desktop-session-projection.js';
@@ -1237,8 +1238,8 @@ export interface MakaBridge {
       onExecution?: (projection: import('../shared/session-execution-projection.js').SessionExecutionProjection | undefined) => void,
     ): () => void;
     subscribeChanges(handler: (event: SessionChangedEvent) => void): () => void;
-    archive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<void>;
-    unarchive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<void>;
+    archive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<DesktopSessionActionResult<void>>;
+    unarchive(sessionId: string, options?: { revisionFamily?: boolean }): Promise<DesktopSessionActionResult<void>>;
     setFlagged(sessionId: string, isFlagged: boolean, options?: { revisionFamily?: boolean }): Promise<void>;
     rename(sessionId: string, name: string, options?: { revisionFamily?: boolean }): Promise<void>;
     setPermissionMode(sessionId: string, mode: PermissionMode): Promise<DesktopSessionUpdateResult<DesktopSessionSummary>>;
@@ -1284,7 +1285,7 @@ export interface MakaBridge {
     remove(
       sessionId: string,
       options?: { revisionFamily?: boolean; requireArchived?: boolean },
-    ): Promise<{ disposition: 'removed' | 'restored'; archivedSubtaskCount: number }>;
+    ): Promise<DesktopSessionActionResult<{ disposition: 'removed' | 'restored'; archivedSubtaskCount: number }>>;
     /**
      * How many linked subtasks a delete of this parent would move to the
      * archive, per the Host's removal plan. The confirm warns off this instead

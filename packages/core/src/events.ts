@@ -116,7 +116,12 @@ type TerminalToolResultStatus = Exclude<ShellRunTerminalStatus, 'orphaned'>;
 
 export type StorageRef =
   | SessionContextRef
-  | { kind: 'session_file'; sessionId: string; relativePath: string }
+  | {
+      kind: 'session_file';
+      sessionId: string;
+      /** Stable Artifact ID, never a Blob locator or a workspace filesystem path. */
+      relativePath: string;
+    }
   | { kind: 'workspace_file'; relativePath: string }
   | { kind: 'external_file'; absolutePath: string };
 
@@ -1038,8 +1043,8 @@ type ShellRunResultMetadata = {
   completedAt?: number;
   exitCode?: number;
   failureMessage?: string;
-  /** Where a background command's output is being written for the model to read. */
-  outputFile?: string;
+  /** Session-scoped live output; conversation branches freeze their own view. */
+  outputRef?: string;
   revision: number;
   timeoutMs?: number;
   sandboxDenial?: SandboxDenialSignal | SandboxDenialRecovery;
@@ -1075,7 +1080,7 @@ export class ToolOutcomeUnknownError extends Error {
 }
 
 export interface TerminalSavedOutput {
-  path: string;
+  ref: string;
   chars: number;
   truncated: boolean;
 }
@@ -1103,11 +1108,13 @@ export type ToolResultContent =
   | {
       kind: 'text';
       text: string;
+      /** Explicit immutable file dependencies for text-only producer results. */
+      fileRefs?: readonly string[];
       sandboxDenial?: SandboxDenialSignal;
       sandboxFailure?: SandboxBoundaryFailureSignal;
       uncertainOutcome?: ToolUncertainOutcomeSignal;
     }
-  | { kind: 'json'; value: unknown }
+  | { kind: 'json'; value: unknown; fileRefs?: readonly string[] }
   | {
       kind: 'file_diff';
       paths: string[];

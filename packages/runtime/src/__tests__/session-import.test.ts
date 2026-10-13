@@ -19,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -32,11 +33,20 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
+import { stableJsonStringify } from '@maka/core/canonical-json';
+import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
+import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
+import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { test } from 'node:test';
 import { encodeCanonicalRuntimeEvent } from '@maka/core/canonical-runtime-event';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
-import { OPERATIONAL_STATE_DATABASE_NAME } from '@maka/storage/operational-state-store';
+import {
+  acquireOperationalStateDatabase,
+  OPERATIONAL_STATE_DATABASE_NAME,
+} from '@maka/storage/operational-state-store';
 import { createSessionStore } from '@maka/storage/session-store';
+import { buildBuiltinTools } from '../builtin-tools.js';
 import { exportSessionBundle } from '../session-export.js';
 import { importSessionBundle } from '../session-import.js';
 import { shellRunOutputFilePath, taskOutputRoot } from '../shell-run-output-file.js';
@@ -170,7 +180,7 @@ test('round-trips a Session into another workspace, row for row', async () => {
   }
 });
 
-test("carries a Session's saved outputs and names them under the importing root", async () => {
+test("carries a Session's saved outputs through owned bindings without rewriting history", async () => {
   const source = await makeWorkspace('maka-import-saved-source');
   const target = await makeWorkspace('maka-import-saved-target');
   try {
@@ -194,10 +204,13 @@ test("carries a Session's saved outputs and names them under the importing root"
       await store.close?.();
     }
     const sourceRoot = await realpath(source.workspaceRoot);
-    const saved = await saveToolResultText(
-      toolResultFilePath(toolResultRoot(sourceRoot), sessionId, 'bash-1'),
+    const savedRelativePath = await seedArtifact(
+      sourceRoot,
+      sessionId,
+      'bash-1',
       'all of the output',
     );
+    const saved = { path: 'maka://runtime/attachments/bash-1', chars: 17 };
     const task = shellRunOutputFilePath(taskOutputRoot(sourceRoot), sessionId, 'task-1');
     await mkdir(dirname(task), { recursive: true });
     await writeFile(task, 'done\n');
@@ -247,7 +260,7 @@ test("carries a Session's saved outputs and names them under the importing root"
               stderrTruncated: false,
               redacted: false,
             },
-            savedOutput: { path: saved.path, chars: saved.chars, truncated: false },
+            savedOutput: { ref: saved.path, chars: saved.chars, truncated: false },
           },
           modelProjection: { version: 1, kind: 'text', text: `saved to ${saved.path};` },
         },
@@ -291,8 +304,10 @@ test("carries a Session's saved outputs and names them under the importing root"
     });
     if (!exported.ok) assert.fail(`export failed: ${JSON.stringify(exported.reason)}`);
     assert.equal(exported.export.stateRoot, sourceRoot);
-    assert.ok(exported.export.includedEntries.includes('tool-results'));
+    assert.ok(!exported.export.includedEntries.includes('tool-results'));
+    assert.ok(exported.export.includedEntries.includes('artifacts'));
     assert.ok(exported.export.includedEntries.includes('tasks'));
+    const sourceRows = readSessionRows(source.workspaceRoot, sessionId);
 
     const imported = await importSessionBundle({
       workspaceRoot: target.workspaceRoot,
@@ -301,16 +316,68 @@ test("carries a Session's saved outputs and names them under the importing root"
     if (!imported.ok) assert.fail(`import failed: ${JSON.stringify(imported.reason)}`);
 
     const targetRoot = await realpath(target.workspaceRoot);
-    const movedSaved = toolResultFilePath(toolResultRoot(targetRoot), sessionId, 'bash-1');
+    const movedSaved = join(targetRoot, 'artifacts', savedRelativePath);
     const movedTask = shellRunOutputFilePath(taskOutputRoot(targetRoot), sessionId, 'task-1');
     assert.equal(await readFile(movedSaved, 'utf8'), 'all of the output');
     assert.equal(await readFile(movedTask, 'utf8'), 'done\n');
     if (process.platform !== 'win32') {
-      assert.equal((await stat(movedSaved)).mode & 0o777, 0o600);
+      assert.equal((await stat(movedSaved)).mode & 0o777, 0o400);
       assert.equal((await stat(dirname(movedSaved))).mode & 0o777, 0o700);
     }
-    // Only the exported Session's folder travelled.
+    // Only the exported Session's folder travelled; its history remains byte-identical.
     await assert.rejects(lstat(join(toolResultRoot(targetRoot), otherId)), /ENOENT/u);
+    assert.deepEqual(readSessionRows(target.workspaceRoot, sessionId), sourceRows);
+
+    // Neither a binding lookup nor a tool read may rely on the exporting workspace.
+    await rm(source.workspaceRoot, { recursive: true, force: true });
+    const owner = await tryAcquireInteractiveRootOwner(
+      await resolveStorageRoot({ path: targetRoot, kind: 'interactive' }),
+    );
+    assert.ok(owner);
+    const importedStore = await openInteractiveArtifactStoreForWrite(owner.lease);
+    try {
+      // Resource preparation happens before any file tool is invoked.
+      const path = join(targetRoot, 'execution', 'saved.log');
+      await mkdir(dirname(path), { recursive: true });
+      const artifactId = parseAttachmentResourceRef(saved.path)!.artifactId;
+      await importedStore.withReadableFile(sessionId, artifactId, (source) =>
+        copyFile(source, path),
+      );
+      const tools = buildBuiltinTools();
+      const read = tools.find((tool) => tool.name === 'Read')!;
+      const grep = tools.find((tool) => tool.name === 'Grep')!;
+      const context = {
+        sessionId,
+        turnId: 'read-imported',
+        toolCallId: 'read',
+        cwd: targetRoot,
+        abortSignal: new AbortController().signal,
+        emitOutput() {},
+      };
+      for (const text of ['all of the output']) {
+        const page = await read.impl({ file_path: path, limit: 1 }, context);
+        assert.equal((page as { content: string }).content, text);
+        const found = await grep.impl({ path, pattern: text, output_mode: 'count' }, context);
+        assert.deepEqual((found as { matches: string[] }).matches, [`${path}:1`]);
+        // Full filesystem access is not Session isolation. Both callers see
+        // the same path; only resource preparation requires membership.
+        assert.equal(
+          (
+            (await read.impl({ file_path: path }, { ...context, sessionId: otherId })) as {
+              content: string;
+            }
+          ).content,
+          text,
+        );
+        await assert.rejects(
+          importedStore.withReadableFile(otherId, artifactId, async () => undefined),
+          /unavailable/,
+        );
+      }
+    } finally {
+      importedStore.close();
+      await owner.close();
+    }
 
     const targetDb = openDatabase(target.workspaceRoot, true);
     try {
@@ -327,24 +394,22 @@ test("carries a Session's saved outputs and names them under the importing root"
       const result = payload('evt-result').content;
       assert.equal(result?.kind, 'function_response');
       if (result?.kind !== 'function_response') return;
-      assert.equal(
-        (result.result as { savedOutput: { path: string } }).savedOutput.path,
-        movedSaved,
-      );
+      assert.equal((result.result as { savedOutput: { ref: string } }).savedOutput.ref, saved.path);
       assert.deepEqual(result.modelProjection, {
         version: 1,
         kind: 'text',
-        text: `saved to ${movedSaved};`,
+        text: `saved to ${saved.path};`,
       });
       assert.deepEqual(payload('evt-notice').content, {
         kind: 'text',
-        text: `<output-file>${movedTask}</output-file>`,
+        text: `<output-file>${task}</output-file>`,
       });
       // A tool call is left exactly as it was made: its hash authenticates it.
       const call = payload('evt-call').content;
       assert.deepEqual(call?.kind === 'function_call' ? call.args : undefined, {
         file_path: saved.path,
       });
+      // The live shell-run locator moves, unlike its historical notification.
       const record = targetDb
         .prepare('SELECT record_json FROM core_shell_runs WHERE session_id = ?')
         .get(sessionId) as { record_json: unknown };
@@ -440,32 +505,7 @@ test('carries the subagent subtree and its artifact bytes across', async () => {
       await store.close?.();
     }
 
-    const relativePath = `${childId}/child-file.txt`;
-    await mkdir(join(source.workspaceRoot, 'artifacts', childId), { recursive: true });
-    await writeFile(join(source.workspaceRoot, 'artifacts', relativePath), 'CHILD-BYTES');
-    const db = openDatabase(source.workspaceRoot);
-    try {
-      db.prepare(`
-        INSERT INTO artifact_records(artifact_id, session_id, created_at, relative_path, record_json)
-        VALUES ('child', ?, 0, ?, ?)
-      `).run(
-        childId,
-        relativePath,
-        JSON.stringify({
-          id: 'child',
-          sessionId: childId,
-          turnId: 'turn-1',
-          createdAt: 0,
-          name: 'file.txt',
-          kind: 'file',
-          relativePath,
-          sizeBytes: 11,
-          source: 'tool_result',
-        }),
-      );
-    } finally {
-      db.close();
-    }
+    const relativePath = await seedArtifact(source.workspaceRoot, childId, 'child', 'CHILD-BYTES');
 
     const bundle = join(source.root, 'bundle.maka-session');
     await exportSessionBundle({
@@ -506,7 +546,6 @@ test('carries the subagent subtree and its artifact bytes across', async () => {
 test('leaves the shared workspace connection as it found it', async () => {
   const source = await makeWorkspace('maka-import-pragma-source');
   const target = await makeWorkspace('maka-import-pragma-target');
-  const { acquireOperationalStateDatabase } = await import('@maka/storage/operational-state-store');
   try {
     const sessionId = await createSession(source.workspaceRoot);
     await seedHistory(source.workspaceRoot, sessionId);
@@ -792,29 +831,31 @@ async function seedArtifact(
   artifactId: string,
   bytes: string,
 ): Promise<string> {
-  const relativePath = `${sessionId}/${artifactId}-file.txt`;
-  await mkdir(join(workspaceRoot, 'artifacts', sessionId), { recursive: true });
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const relativePath = `blobs/sha256/${hash.slice(0, 2)}/${hash}`;
+  await mkdir(dirname(join(workspaceRoot, 'artifacts', relativePath)), { recursive: true });
   await writeFile(join(workspaceRoot, 'artifacts', relativePath), bytes);
   const db = openDatabase(workspaceRoot);
   try {
-    db.prepare(`
-      INSERT INTO artifact_records(artifact_id, session_id, created_at, relative_path, record_json)
-      VALUES (?, ?, 0, ?, ?)
-    `).run(
+    db.prepare(`INSERT INTO artifact_objects(artifact_id, relative_path, size_bytes, created_at, record_json)
+      VALUES (?, ?, ?, 0, ?)`).run(
       artifactId,
-      sessionId,
       relativePath,
-      JSON.stringify({
+      Buffer.byteLength(bytes, 'utf8'),
+      stableJsonStringify({
         id: artifactId,
-        sessionId,
         turnId: 'turn-1',
         createdAt: 0,
         name: 'file.txt',
         kind: 'file',
         relativePath,
-        sizeBytes: bytes.length,
+        sizeBytes: Buffer.byteLength(bytes, 'utf8'),
         source: 'tool_result',
       }),
+    );
+    db.prepare('INSERT INTO artifact_records(session_id, artifact_id) VALUES (?, ?)').run(
+      sessionId,
+      artifactId,
     );
   } finally {
     db.close();
@@ -906,18 +947,42 @@ test('a failure after the context commit is still retryable', async () => {
 
     const targetSession = await createSession(target.workspaceRoot, 'Unrelated');
     await seedContext(target.workspaceRoot, targetSession, 'ZZ');
-    // An artifact id already taken by a Session the bundle knows nothing about.
-    // The importability check reads Session ids, so this passes it and fails in
-    // the operational merge -- after the context transaction has committed.
-    await seedArtifact(target.workspaceRoot, targetSession, 'shared', 'OTHER');
-
-    await assert.rejects(() => importState(target.workspaceRoot, source.workspaceRoot));
-
-    const clear = openDatabase(target.workspaceRoot);
+    const retainedArtifact = await seedArtifact(
+      target.workspaceRoot,
+      targetSession,
+      'unrelated',
+      'OTHER',
+    );
+    // Fail the operational merge after context has committed. Deleting a
+    // membership no longer frees an immutable Artifact identity, so an ID
+    // collision is not a transient failure that a retry can repair.
+    // Hold the validated connection before installing the test-only trigger.
+    const held = acquireOperationalStateDatabase(await realpath(target.workspaceRoot));
     try {
-      clear.prepare('DELETE FROM artifact_records WHERE artifact_id = ?').run('shared');
+      held.database.exec(`
+        CREATE TRIGGER reject_import_artifact AFTER INSERT ON artifact_records
+        WHEN NEW.session_id = '${sessionId}'
+        BEGIN SELECT RAISE(ABORT, 'deliberate artifact import failure'); END;
+      `);
+      await assert.rejects(
+        () => importState(target.workspaceRoot, source.workspaceRoot),
+        /deliberate artifact import failure/,
+      );
+      assert.equal(readSessionRows(target.workspaceRoot, sessionId).metadata, undefined);
+      assert.deepEqual(
+        held.database
+          .prepare('SELECT artifact_id FROM artifact_objects')
+          .all()
+          .map((row) => row.artifact_id),
+        ['unrelated'],
+      );
+      assert.equal(readContextUsage(target.workspaceRoot).blobCount, 2);
     } finally {
-      clear.close();
+      try {
+        held.database.exec('DROP TRIGGER IF EXISTS reject_import_artifact');
+      } finally {
+        held.close();
+      }
     }
 
     // Context rows survived the failure, so the retry re-inserts rows that are
@@ -934,6 +999,14 @@ test('a failure after the context commit is still retryable', async () => {
       'ABC',
     );
     assert.equal(readContextUsage(target.workspaceRoot).blobCount, 2);
+    assert.equal(
+      await readFile(join(target.workspaceRoot, 'artifacts', retainedArtifact), 'utf8'),
+      'OTHER',
+    );
+    assert.deepEqual(
+      readSessionRows(target.workspaceRoot, sessionId),
+      readSessionRows(source.workspaceRoot, sessionId),
+    );
   } finally {
     await rm(source.root, { recursive: true, force: true });
     await rm(target.root, { recursive: true, force: true });
@@ -1015,7 +1088,7 @@ test('accepts an identical artifact left by a crashed attempt, and only an ident
     // behind with no row to explain it. `COPYFILE_EXCL` refuses it, so without
     // this the workspace can never import that bundle again.
     const staged = join(target.workspaceRoot, 'artifacts', relativePath);
-    await mkdir(join(target.workspaceRoot, 'artifacts', sessionId), { recursive: true });
+    await mkdir(dirname(staged), { recursive: true });
     await writeFile(staged, 'DIFFERENT');
     await assert.rejects(
       () => importState(target.workspaceRoot, source.workspaceRoot),

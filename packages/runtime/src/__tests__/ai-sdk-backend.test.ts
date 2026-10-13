@@ -1997,7 +1997,7 @@ describe('AiSdkBackend model history', () => {
     assert.ok(text.includes('see the attached chart'), `expected user text in: ${text}`);
     assert.ok(
       text.includes(
-        '<attachment>\nThe attachment content is unavailable to Read.\nname: "chart.png"\nmime_type: "image/png"\n</attachment>',
+        '<attachment>\nFile path unavailable in this execution environment. Do not infer a path from the display name. Image content may still be supplied directly.\nname: "chart.png"\nmime_type: "image/png"\n</attachment>',
       ),
       `expected unavailable attachment context in RuntimeEvent replay, got: ${text}`,
     );
@@ -2162,7 +2162,7 @@ describe('AiSdkBackend model history', () => {
     assert.match(joined, /quoted_excerpt/, 'the excerpt renders in its canonical envelope');
   });
 
-  test('current-turn image attachment keeps its Read reference unless vision support is explicit', async () => {
+  test('current-turn image has no invented path or native image without preparation or vision', async () => {
     const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
     const model = completionModel();
     const backend = createBackend({
@@ -2203,11 +2203,68 @@ describe('AiSdkBackend model history', () => {
     const text = parts.map((p) => p.text ?? '').join('\n');
     assert.ok(text.includes('describe this chart'), `expected original text in: ${text}`);
     assert.ok(
-      text.includes('<attachment>\nRead argument: {"ref":"maka://runtime/attachments/artifact-1"}'),
-      `expected attachment Read reference in: ${text}`,
+      text.includes('<attachment>\nFile path unavailable in this execution environment.'),
+      `expected explicit unavailable file information in: ${text}`,
     );
     assert.doesNotMatch(text, /does not support image input/);
     assert.doesNotMatch(text, /switch to a vision-capable model/);
+  });
+
+  test('forwards current execution-file bindings to the provider without changing attachment identities', async () => {
+    const model = completionModel();
+    const reference = {
+      kind: 'session_file' as const,
+      sessionId: 'session-1',
+      relativePath: 'artifact-1',
+    };
+    let resolved = 0;
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      resolveFilePath: async (ref) => {
+        assert.equal(ref, 'maka://runtime/attachments/artifact-1');
+        resolved++;
+        return {
+          ok: true,
+          file: {
+            path: '/current-execution/report.json',
+            name: 'report.json',
+            sizeBytes: 14,
+            source: 'user_upload',
+          },
+          readOnly: true,
+        };
+      },
+    });
+    await drain(
+      backend.send({
+        turnId: 'turn-current',
+        text: 'Read this JSON with Python',
+        attachments: [
+          {
+            kind: 'code',
+            name: 'report.json',
+            mimeType: 'application/json',
+            bytes: 14,
+            ref: reference,
+          },
+        ],
+        context: [],
+        runtimeContext: [],
+      }),
+    );
+    const prompt = JSON.stringify(compactPrompt(model));
+    assert.ok(resolved > 0);
+    assert.match(prompt, /\/current-execution\/report.json/);
+    assert.match(prompt, /file_path/);
+    assert.doesNotMatch(prompt, /maka:\/\/runtime\/attachments/);
+    assert.deepEqual(reference, {
+      kind: 'session_file',
+      sessionId: 'session-1',
+      relativePath: 'artifact-1',
+    });
   });
 
   test('reports an unavailable attachment read and still sends the readable image', async () => {
@@ -14498,7 +14555,7 @@ describe('AiSdkBackend steering durability and identity', () => {
     assert.equal(
       parts[0]?.text,
       buildSteeringEnvelope(
-        'inspect the authoritative inputs\n\n<attachment>\nThe attachment content is unavailable to Read.\nname: "first.png"\nmime_type: "image/png"\n</attachment>\n<attachment>\nThe attachment content is unavailable to Read.\nname: "second.pdf"\nmime_type: "application/pdf"\n</attachment>',
+        'inspect the authoritative inputs\n\n<attachment>\nFile path unavailable in this execution environment. Do not infer a path from the display name. Image content may still be supplied directly.\nname: "first.png"\nmime_type: "image/png"\n</attachment>\n<attachment>\nFile path unavailable in this execution environment. Do not infer a path from the display name. Image content may still be supplied directly.\nname: "second.pdf"\nmime_type: "application/pdf"\n</attachment>',
       ),
     );
     assert.equal(parts[1]?.mediaType, 'image/png');
@@ -15309,6 +15366,115 @@ function completionModel(): MockLanguageModelV4 {
 }
 
 describe('AiSdkBackend session injections', () => {
+  test('a continuation still prepares its file environment without replaying ordinary turn injections', async () => {
+    const model = completionModel();
+    const recorded: string[] = [];
+    let prepared = 0;
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      systemPrompt: async () => ({
+        text: 'SYSTEM',
+        contexts: [{ name: 'ordinary', text: 'ORDINARY_CONTEXT' }],
+        dated: true,
+        sourceRevisions: [],
+      }),
+      injections: new SessionInjections({ sessionId: 'session-1' }),
+      prepareFileEnvironment: async () => {
+        prepared++;
+        return {
+          name: 'file_execution_environment',
+          text: 'Current file: /new-environment/report.csv',
+          revision: 'new-location',
+          position: 'after',
+        };
+      },
+      recordInjection: async (_turnId, content) => {
+        recorded.push(content.name);
+      },
+    });
+    await drain(
+      backend.send({
+        turnId: 'turn-resume',
+        text: '',
+        context: [],
+        runtimeContext: [
+          runtimeTextEvent({
+            id: 'rt-u',
+            turnId: 'turn-source',
+            role: 'user',
+            author: 'user',
+            text: 'original request',
+          }),
+        ],
+        continuation: {
+          sourceInvocationId: 'invocation-source',
+          sourceRunId: 'run-source',
+          sourceTurnId: 'turn-source',
+          sourceRuntimeEventHighWater: 1,
+        },
+      }),
+    );
+    assert.equal(prepared, 1);
+    assert.deepEqual(recorded, ['file_execution_environment']);
+    assert.match(JSON.stringify(model.doStreamCalls[0]?.prompt), /\/new-environment\/report.csv/);
+    assert.doesNotMatch(JSON.stringify(model.doStreamCalls[0]?.prompt), /ORDINARY_CONTEXT/);
+  });
+  test('a relocated file environment reaches the provider through the existing durable injection', async () => {
+    const durable = durableTurnHarness('turn-files', 'continue using the report');
+    const model = completionModel();
+    let prepared = 0;
+    const recorded: string[] = [];
+    const backend = createBackend({
+      connection: connection(),
+      modelId: 'mock-model-id',
+      modelFactory: () => model,
+      tools: [],
+      loadTurnRuntimeEvents: durable.loadTurnRuntimeEvents,
+      injections: new SessionInjections({ sessionId: 'session-1' }),
+      prepareFileEnvironment: async () => {
+        prepared++;
+        return {
+          name: 'file_execution_environment',
+          text: 'Transferred report.csv is now at /new-environment/report.csv',
+          revision: 'new-location',
+          position: 'after',
+        };
+      },
+      recordInjection: async (turnId, content) => {
+        recorded.push(content.name);
+        durable.ledger.push({
+          id: `file-injection-${recorded.length}`,
+          invocationId: 'invocation-1',
+          runId: 'run-1',
+          sessionId: 'session-1',
+          turnId,
+          ts: 2,
+          partial: false,
+          role: 'system',
+          author: 'system',
+          content: { kind: 'injection', ...content },
+        });
+      },
+    });
+    await drainDurably(
+      backend.send(durable.input({ runId: 'run-1', invocationId: 'invocation-1' })),
+      durable,
+    );
+    assert.equal(prepared, 1);
+    assert.equal(recorded.filter((name) => name === 'file_execution_environment').length, 1);
+    assert.match(JSON.stringify(model.doStreamCalls[0]?.prompt), /\/new-environment\/report.csv/);
+    const stamp = durable.ledger.find(
+      (event) =>
+        event.content?.kind === 'injection' && event.content.name === 'file_execution_environment',
+    );
+    assert.equal(
+      stamp?.content?.kind === 'injection' && stamp.content.data?.revision,
+      'new-location',
+    );
+  });
   test('the system speaks around the user text and on the tool result — and only the ledger carries it', async () => {
     const durable = durableTurnHarness('turn-inject', 'what is in the cupboard?');
     let calls = 0;

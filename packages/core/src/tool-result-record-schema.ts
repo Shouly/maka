@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { parseAttachmentResourceRef } from './attachments.js';
 import { ARTIFACT_KINDS, type ArtifactKind } from './artifacts.js';
 import {
   decodeCanonicalShellToolResultContent,
@@ -42,7 +43,7 @@ type RiveResult = Result<'rive_workflow'>;
 
 const TEXT_SHAPE = defineObjectShape<Result<'text'>>()(
   ['kind', 'text'],
-  ['sandboxDenial', 'sandboxFailure', 'uncertainOutcome'],
+  ['sandboxDenial', 'sandboxFailure', 'uncertainOutcome', 'fileRefs'],
 );
 const SANDBOX_FAILURE_SHAPE = defineObjectShape<NonNullable<Result<'text'>['sandboxFailure']>>()(
   ['reason'],
@@ -51,7 +52,7 @@ const SANDBOX_FAILURE_SHAPE = defineObjectShape<NonNullable<Result<'text'>['sand
 const UNCERTAIN_OUTCOME_SHAPE = defineObjectShape<
   NonNullable<Result<'text'>['uncertainOutcome']>
 >()(['code', 'retrySafe'], []);
-const JSON_SHAPE = defineObjectShape<Result<'json'>>()(['kind', 'value'], []);
+const JSON_SHAPE = defineObjectShape<Result<'json'>>()(['kind', 'value'], ['fileRefs']);
 const FILE_DIFF_SHAPE = defineObjectShape<Result<'file_diff'>>()(
   ['kind', 'paths', 'diff'],
   ['shownPath', 'modifiedSinceRead'],
@@ -199,6 +200,13 @@ function firstNonEmptyString(...values: Array<string | undefined>): string | und
   return values.find((value) => value !== undefined && value.trim().length > 0);
 }
 
+function isFileRefs(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isStringArray(value) && value.every((ref) => parseAttachmentResourceRef(ref) !== null))
+  );
+}
+
 function isNonShellToolResultContent(value: unknown): value is ToolResultContent {
   if (!isRecord(value) || typeof value.kind !== 'string') return false;
   switch (value.kind) {
@@ -206,6 +214,7 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
       return (
         hasExactShape(value, TEXT_SHAPE) &&
         typeof value.text === 'string' &&
+        isFileRefs(value.fileRefs) &&
         (value.sandboxDenial === undefined || isSandboxDenialSignal(value.sandboxDenial)) &&
         (value.sandboxFailure === undefined ||
           (isRecord(value.sandboxFailure) &&
@@ -224,7 +233,11 @@ function isNonShellToolResultContent(value: unknown): value is ToolResultContent
             value.uncertainOutcome.retrySafe === false))
       );
     case 'json':
-      return hasExactShape(value, JSON_SHAPE) && Object.hasOwn(value, 'value');
+      return (
+        hasExactShape(value, JSON_SHAPE) &&
+        Object.hasOwn(value, 'value') &&
+        isFileRefs(value.fileRefs)
+      );
     case 'file_diff':
       return (
         hasExactShape(value, FILE_DIFF_SHAPE) &&

@@ -18,9 +18,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import type { AgentRunStore, EmittedAgentRunEvent } from '@maka/core/agent-run';
@@ -44,22 +44,19 @@ import { createSqliteRuntimeStore } from '@maka/storage/sqlite-runtime-store';
 import {
   cloneConversationRuntimeLedger,
   collectConversationCopyLinkedChildReferences,
-  collectConversationCopySavedOutputPaths,
+  collectConversationCopyTaskOutputIds,
   collectConversationCopySessionContextRefIds,
   collectConversationCopySessionFileRefs,
-  conversationCopySavedOutputFolders,
-  copyConversationSavedOutputs,
   createConversationCopySlice,
   prepareConversationRuntimeLedgerCopy,
   rewriteConversationCopyMessage,
 } from '../conversation-copy.js';
-import { shellRunOutputFilePath, taskOutputRoot } from '../shell-run-output-file.js';
+import { taskOutputRoot } from '../shell-run-output-file.js';
 import {
   purgeSessionToolResultFiles,
   saveToolResultText,
   toolResultFilePath,
   toolResultRoot,
-  toolResultSaveTicket,
 } from '../tool-result-file.js';
 import {
   buildHistoryCompactCheckpoint,
@@ -203,7 +200,7 @@ test('collectConversationCopySessionFileRefs gathers source-Session refs across 
   ]);
 });
 
-test('conversation copies collect and rewrite delivered file handles without changing source paths', () => {
+test('conversation copies collect delivered files without changing historical receipts', () => {
   const content = {
     kind: 'user_file_delivery' as const,
     status: 'normal' as const,
@@ -246,11 +243,8 @@ test('conversation copies collect and rewrite delivered file handles without cha
     mode: 'exact' as const,
     sourceSessionId: 'source',
     targetSessionId: 'target',
-    artifactIds: new Map([
-      ['first', 'copy-first'],
-      ['second', 'copy-second'],
-    ]),
-    relativePaths: new Map<string, string>(),
+    artifactIds: new Set(['first', 'second']),
+
     runIds: new Map<string, string>(),
     runtimeEventIds: new Map<string, string>(),
     providerTraceIds: new Map<string, string>(),
@@ -258,10 +252,7 @@ test('conversation copies collect and rewrite delivered file handles without cha
   };
   const rewritten = rewriteConversationCopyMessage(message, references);
   assert.ok(rewritten.type === 'tool_result');
-  assert.deepEqual(rewritten.content, {
-    ...content,
-    files: content.files.map((file) => ({ ...file, artifactId: `copy-${file.artifactId}` })),
-  });
+  assert.deepEqual(rewritten.content, content);
   assert.deepEqual(
     content.files.map((file) => file.artifactId),
     ['first', 'second'],
@@ -272,24 +263,21 @@ test('conversation copies collect and rewrite delivered file handles without cha
   );
   const partial = rewriteConversationCopyMessage(message, {
     ...references,
-    artifactIds: new Map([['second', 'copy-second']]),
+    artifactIds: new Set(['second']),
   });
   assert.ok(partial.type === 'tool_result');
-  assert.deepEqual(partial.content, {
-    ...content,
-    files: [{ ...content.files[1]!, artifactId: 'copy-second' }],
-  });
+  assert.deepEqual(partial.content, content);
   const removed = rewriteConversationCopyMessage(message, {
     ...references,
-    artifactIds: new Map(),
+    artifactIds: new Set([]),
   });
-  assert.ok(removed.type === 'tool_result' && removed.content.kind === 'text');
-  assert.match(removed.content.text, /no longer available/);
+  assert.ok(removed.type === 'tool_result');
+  assert.deepEqual(removed.content, content);
   assert.deepEqual(decodeCanonicalToolResultContent(removed.content), removed.content);
   assert.deepEqual(
     rewriteConversationCopyMessage(removed, references),
     removed,
-    'an unavailable-file notice survives another copy',
+    'the original receipt survives deletion and repeated copies',
   );
 });
 
@@ -328,8 +316,8 @@ test('Side Conversation snapshots remove linked child ownership identifiers', ()
     mode: 'exact',
     sourceSessionId: 'session-source',
     targetSessionId: 'session-target',
-    artifactIds: new Map([['child-artifact', 'child-artifact-snapshot']]),
-    relativePaths: new Map(),
+    artifactIds: new Set(['child-artifact']),
+
     linkedChildren: { mode: 'snapshot' },
     runIds: new Map(),
     runtimeEventIds: new Map(),
@@ -349,7 +337,7 @@ test('Side Conversation snapshots remove linked child ownership identifiers', ()
       turnId: 'child-turn',
       status: 'completed',
       summary: 'The delegated review found one issue.',
-      artifactIds: ['child-artifact-snapshot'],
+      artifactIds: ['child-artifact'],
     },
   ]);
 });
@@ -387,8 +375,8 @@ test('Side Conversation snapshots rewrite source-owned Agent Swarm identities', 
     mode: 'exact',
     sourceSessionId: 'session-source',
     targetSessionId: 'session-target',
-    artifactIds: new Map([['artifact-source', 'artifact-target']]),
-    relativePaths: new Map(),
+    artifactIds: new Set(['artifact-source']),
+
     linkedChildren: { mode: 'snapshot' },
     runIds: new Map([
       ['run-source', 'run-target'],
@@ -412,7 +400,7 @@ test('Side Conversation snapshots rewrite source-owned Agent Swarm identities', 
       resumedFromRunId: 'run-parent-target',
       status: 'completed',
       summary: 'The source-owned run completed.',
-      artifactIds: ['artifact-target'],
+      artifactIds: ['artifact-source'],
     },
   ]);
 });
@@ -440,8 +428,8 @@ test('Side Conversation snapshots rewrite source-owned subagent identities', () 
     mode: 'exact',
     sourceSessionId: 'session-source',
     targetSessionId: 'session-target',
-    artifactIds: new Map([['artifact-source', 'artifact-target']]),
-    relativePaths: new Map(),
+    artifactIds: new Set(['artifact-source']),
+
     linkedChildren: { mode: 'snapshot' },
     runIds: new Map([['run-source', 'run-target']]),
     runtimeEventIds: new Map(),
@@ -453,7 +441,7 @@ test('Side Conversation snapshots rewrite source-owned subagent identities', () 
     assert.fail('Expected the source-owned subagent result');
   }
   assert.equal(rewritten.content.runId, 'run-target');
-  assert.deepEqual(rewritten.content.artifactIds, ['artifact-target']);
+  assert.deepEqual(rewritten.content.artifactIds, ['artifact-source']);
 });
 
 test('conversation copy slices exact turns on inclusive and exclusive boundaries', () => {
@@ -500,7 +488,7 @@ test('conversation copy rewrites owned references without changing opaque tool p
           ref: {
             kind: 'session_file',
             sessionId: 'session-source',
-            relativePath: 'session-source/artifact-source-file.txt',
+            relativePath: 'artifact-source',
           },
         },
         {
@@ -586,10 +574,8 @@ test('conversation copy rewrites owned references without changing opaque tool p
     linkedChildren: { mode: 'reject' as const },
     sourceSessionId: 'session-source',
     targetSessionId: 'session-target',
-    artifactIds: new Map([['artifact-source', 'artifact-target']]),
-    relativePaths: new Map([
-      ['session-source/artifact-source-file.txt', 'session-target/artifact-target-file.txt'],
-    ]),
+    artifactIds: new Set(['artifact-source']),
+
     contextRefs: new Map([['context-source', 'context-target']]),
     runIds: new Map([['run-source', 'run-target']]),
     invocationIds: new Map([['invocation-source', 'invocation-target']]),
@@ -601,7 +587,7 @@ test('conversation copy rewrites owned references without changing opaque tool p
   assert.deepEqual(rewritten[0]?.type === 'user' ? rewritten[0].attachments?.[0]?.ref : undefined, {
     kind: 'session_file',
     sessionId: 'session-target',
-    relativePath: 'session-target/artifact-target-file.txt',
+    relativePath: 'artifact-source',
   });
   assert.deepEqual(rewritten[0]?.type === 'user' ? rewritten[0].attachments?.[1]?.ref : undefined, {
     kind: 'session_context',
@@ -687,7 +673,7 @@ test('conversation copy rewrites owned references without changing opaque tool p
     canonical.type === 'user' && canonical.attachments?.[0]?.ref.kind === 'session_file'
       ? canonical.attachments[0].ref.relativePath
       : undefined,
-    'artifact-target',
+    'artifact-source',
   );
   assert.deepEqual(
     rewritten[1]?.type === 'tool_call' ? rewritten[1].args : undefined,
@@ -707,7 +693,7 @@ test('conversation copy rewrites owned references without changing opaque tool p
       : undefined;
   assert.equal(swarm?.runId, 'run-target');
   assert.equal(swarm?.resumedFromRunId, 'run-target');
-  assert.deepEqual(swarm?.artifactIds, ['artifact-target']);
+  assert.deepEqual(swarm?.artifactIds, ['artifact-source']);
   const preserved = rewriteConversationCopyMessage(messages[0]!, {
     mode: 'preserve_external',
     sourceSessionId: 'session-source',
@@ -726,13 +712,13 @@ test('conversation copy rewrites owned references without changing opaque tool p
   // uncopyable over a reclaimed byte nobody reads.
   const reclaimed = rewriteConversationCopyMessage(messages[3]!, {
     ...references,
-    artifactIds: new Map(),
+    artifactIds: new Set([]),
   });
   assert.deepEqual(
     reclaimed.type === 'tool_result' && reclaimed.content.kind === 'agent_swarm'
       ? reclaimed.content.items[0]?.artifactIds
       : undefined,
-    [],
+    ['artifact-source'],
   );
   assert.throws(
     () =>
@@ -1000,8 +986,7 @@ test('conversation copy rewrites a complete tool recovery bundle atomically', as
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -1221,8 +1206,7 @@ test('conversation copy excludes legacy Code Mode partials while rewriting paren
           linkedChildren: { mode: 'reject' },
           sourceSessionId: 'session-source',
           targetSessionId,
-          artifactIds: new Map(),
-          relativePaths: new Map(),
+          artifactIds: new Set([]),
         },
         runStore,
         runtimeEventStore,
@@ -1333,8 +1317,7 @@ test('conversation copy rewrites the nested identity of a model call attempt', a
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map([['artifact-source', 'artifact-target']]),
-        relativePaths: new Map(),
+        artifactIds: new Set(['artifact-source']),
       },
       runStore,
       runtimeEventStore,
@@ -1358,7 +1341,7 @@ test('conversation copy rewrites the nested identity of a model call attempt', a
     // Owned trace/logical-call/artifact identity is remapped, not carried over.
     assert.notEqual(attempt.data?.logicalCallId, 'logical-source');
     assert.notEqual(attempt.data?.traceId, 'trace-source');
-    assert.equal(attempt.data?.captureArtifactId, 'artifact-target');
+    assert.equal(attempt.data?.captureArtifactId, 'artifact-source');
     // The rewritten record is still a valid accounting authority whose identity
     // matches the envelope the ledger projects it under.
     const decoded = decodeModelCallAttempt(attempt.data);
@@ -1439,8 +1422,7 @@ test('conversation copy survives a capture the store has already reclaimed', asy
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -1529,8 +1511,7 @@ test('conversation copy repairs a model call attempt stranded by a pre-fix copy'
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -1578,7 +1559,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
       'maka://runtime/attachments/artifact-source?session=other',
     ].join('\n');
     const targetAttachmentText = [
-      '![chart](maka://runtime/attachments/artifact-target)',
+      '![chart](maka://runtime/attachments/artifact-source)',
       'maka://runtime/attachments/artifact-source?session=other',
     ].join('\n');
     const sourceEvents: RuntimeEvent[] = [
@@ -1857,8 +1838,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-missing-artifact',
-        artifactIds: new Map([['artifact-source', 'artifact-target']]),
-        relativePaths: new Map(),
+        artifactIds: new Set(['artifact-source']),
       },
       runStore,
       runtimeEventStore,
@@ -1871,7 +1851,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
       reclaimedResult?.type === 'tool_result' && reclaimedResult.content.kind === 'subagent'
         ? reclaimedResult.content.artifactIds
         : undefined,
-      [],
+      ['artifact-deleted'],
     );
     assert.equal(
       (await runtimeEventStore.listSessionInvocations('session-missing-artifact')).length,
@@ -1888,8 +1868,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
           linkedChildren: { mode: 'reject' },
           sourceSessionId: 'session-source',
           targetSessionId: 'session-unmapped-artifact',
-          artifactIds: new Map(),
-          relativePaths: new Map(),
+          artifactIds: new Set([]),
         },
         runStore,
         runtimeEventStore,
@@ -1919,11 +1898,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map([
-          ['artifact-source', 'artifact-target'],
-          ['artifact-deleted', 'artifact-target-deleted'],
-        ]),
-        relativePaths: new Map(),
+        artifactIds: new Set(['artifact-source', 'artifact-deleted']),
       },
       runStore,
       runtimeEventStore,
@@ -1938,7 +1913,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
       copiedTypedResult?.type === 'tool_result' && copiedTypedResult.content.kind === 'subagent'
         ? copiedTypedResult.content.artifactIds
         : undefined,
-      ['artifact-target-deleted'],
+      ['artifact-deleted'],
     );
     const [targetRun] = await runtimeEventStore.listSessionInvocations('session-target');
     assert.equal(targetRun?.runId, 'run-target');
@@ -1968,7 +1943,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
     // The opening fact is the run's first event, so the copied source events
     // line up with it one place along.
     const copiedEvents = targetEvents.slice(1);
-    assert.equal(copiedEvents[0]?.refs?.artifactId, 'artifact-target');
+    assert.equal(copiedEvents[0]?.refs?.artifactId, 'artifact-source');
     assert.equal(
       copiedEvents[0]?.content?.kind === 'text' ? copiedEvents[0].content.text : undefined,
       targetAttachmentText,
@@ -1997,7 +1972,7 @@ test('conversation copy clones one terminal Runtime ledger with new owned identi
     const typedResult = decodeCanonicalToolResultContent(typedResultValue);
     assert.equal(typedResult.kind === 'subagent' ? typedResult.permissionMode : undefined, 'ask');
     assert.deepEqual(typedResult.kind === 'subagent' ? typedResult.artifactIds : undefined, [
-      'artifact-target-deleted',
+      'artifact-deleted',
     ]);
     const targetOperationalEvents = await runStore.readEvents('session-target', 'run-target');
     // The retired provider-request writers are treated like any other type this
@@ -2204,8 +2179,7 @@ test('conversation copy rebuilds an inline checkpoint without legacy child event
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -2325,8 +2299,7 @@ test('conversation copy drops a checkpoint from a superseded source policy inste
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -2489,8 +2462,7 @@ test('conversation copy rebuilds a resumed child checkpoint over its child run c
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -2641,76 +2613,25 @@ test('conversation copy rewrites projection references and carries chained check
       'session-source',
     );
     const plan = await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore);
-    const collect = (copyPlan: typeof plan) =>
-      collectConversationCopySavedOutputPaths({
-        folders: Object.values(conversationCopySavedOutputFolders(roots, 'session-source')),
+    assert.deepEqual(
+      collectConversationCopySessionContextRefIds({
+        sourceSessionId: 'session-source',
         messages: source.messages,
-        plan: copyPlan,
-      });
-    const named = collect(plan);
-    assert.deepEqual(named, [saved.path, missing].sort());
-    const withCheckpoint = (value: unknown): typeof plan => ({
-      ...plan,
-      runs: plan.runs.map((run) => ({
-        ...run,
-        operationalEvents: [
-          {
-            type: 'history_compact_checkpoint_recorded',
-            id: 'candidate-checkpoint',
-            sessionId: 'session-source',
-            runId: run.run.runId,
-            turnId: run.run.turnId,
-            ts: 9,
-            data: { checkpoint: value },
-          },
-        ],
-      })),
-    });
-    for (const dropped of [
-      { summary: sectionedSummary(summaryText) },
-      { ...checkpoint, source: { ...checkpoint.source, policyVersion: 'retired-policy' } },
-      {
-        ...checkpoint,
-        coverage: { ...checkpoint.coverage, sourceDigest: 'sha256:' + '0'.repeat(64) },
-      },
-      buildHistoryCompactCheckpoint({
-        sessionId: 'session-source',
-        coveredRuntimeEvents: compactable,
-        providerState: {
-          kind: 'openai_codex_remote_v2',
-          connectionId: 'connection-codex-source',
-          modelId: 'gpt-5-codex',
-          itemId: 'cmp-source',
-          encryptedContent: saved.path,
-        },
+        runtimeEvents: plan.runs.flatMap((run) => run.runtimeEvents),
       }),
-    ]) {
-      assert.deepEqual(collect(withCheckpoint(dropped)), [], 'dropped checkpoints copy no files');
-    }
-    assert.throws(
-      () => collect(withCheckpoint({ ...checkpoint, summary: saved.path })),
-      /Cannot copy invalid history compact checkpoint/u,
+      ['image-source'],
     );
-    assert.throws(
-      () =>
-        collect({
-          ...plan,
-          runs: plan.runs.map((run) => ({
-            ...run,
-            runtimeEvents: run.runtimeEvents.filter((event) => event.id !== 'event-result'),
-          })),
+    assert.deepEqual(
+      [
+        ...collectConversationCopySessionFileRefs({
+          sourceSessionId: 'session-source',
+          messages: source.messages,
+          runtimeEvents: plan.runs.flatMap((run) => run.runtimeEvents),
         }),
-      /crosses the conversation copy boundary/u,
+      ],
+      [],
+      'prose in summaries does not grant file access',
     );
-    const savedOutputPaths = await copyConversationSavedOutputs({
-      roots,
-      sourceSessionId: 'session-source',
-      targetSessionId: 'session-target',
-      paths: named,
-      ticket: toolResultSaveTicket(),
-    });
-    const targetPath = toolResultFilePath(roots.toolResults, 'session-target', 'summary-only');
-    assert.deepEqual(savedOutputPaths, new Map([[saved.path, targetPath]]));
     await cloneConversationRuntimeLedger({
       plan,
       copiedMessages: source.messages,
@@ -2719,10 +2640,9 @@ test('conversation copy rewrites projection references and carries chained check
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
+
         contextRefs: new Map([['image-source', 'image-target']]),
-        savedOutputPaths,
       },
       runStore,
       runtimeEventStore,
@@ -2769,7 +2689,7 @@ test('conversation copy rewrites projection references and carries chained check
     });
     assert.notDeepEqual(replay.events, targetEvents);
     if (copiedCheckpoint.version === 2) {
-      assert.equal(copiedCheckpoint.summary, checkpoint.summary.replace(saved.path, targetPath));
+      assert.equal(copiedCheckpoint.summary, checkpoint.summary);
     }
     assert.ok(validateHistoryCompactCheckpointShape(copiedSuccessor, 'session-target'));
     assert.equal(copiedSuccessor.previousCheckpointId, copiedCheckpoint.checkpointId);
@@ -2782,18 +2702,16 @@ test('conversation copy rewrites projection references and carries chained check
     );
     assert.equal(copiedSuccessor.version, 2);
     if (copiedSuccessor.version === 2) {
-      assert.equal(copiedSuccessor.summary, successor.summary.replace(saved.path, targetPath));
+      assert.equal(copiedSuccessor.summary, successor.summary);
     }
     await purgeSessionToolResultFiles(roots.toolResults, 'session-source');
-    assert.equal(await readFile(targetPath, 'utf8'), 'output retained by the summary');
     const replayText = applyRuntimeEventHistoryCompact(targetEvents, {
       enabled: true,
       checkpoint: copiedSuccessor,
     })
       .events.map((event) => (event.content?.kind === 'text' ? event.content.text : ''))
       .join('\n');
-    assert.ok(replayText.includes(targetPath));
-    assert.equal(replayText.includes(saved.path), false);
+    assert.ok(replayText.includes(saved.path));
     assert.ok(replayText.includes(missing), 'a missing source file keeps its old reference');
     assert.ok(replayText.includes(external), 'another session is outside the copy');
   } finally {
@@ -2880,8 +2798,7 @@ test('conversation copy gives a run whose opening the migration shelved its open
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -2906,25 +2823,17 @@ test('conversation copy gives a run whose opening the migration shelved its open
   }
 });
 
-test('conversation copy carries saved outputs into the target folders and names them there', async () => {
+test('conversation copy preserves portable saved-output refs and explicit dependencies', async () => {
   const root = await mkdtemp(join(tmpdir(), 'maka-saved-output-copy-'));
   try {
     const runStore = createSqliteAgentRunStore(root);
     const runtimeEventStore = createWorkspaceRuntimeStore(root);
     const roots = { toolResults: toolResultRoot(root), taskOutputs: taskOutputRoot(root) };
-    const bash = await saveToolResultText(
-      toolResultFilePath(roots.toolResults, 'session-source', 'bash-1'),
-      'the whole bash output',
-    );
-    const mcp = await saveToolResultText(
-      toolResultFilePath(roots.toolResults, 'session-source', 'mcp-1'),
-      'the whole mcp output',
-    );
-    const task = shellRunOutputFilePath(roots.taskOutputs, 'session-source', 'task-1');
-    await mkdir(dirname(task), { recursive: true });
-    await writeFile(task, 'task output\n\n[exited with code 0]\n');
-    // Named, but its file is already gone: the path stays as it was.
-    const gone = toolResultFilePath(roots.toolResults, 'session-source', 'gone-1');
+    const bash = { path: 'maka://runtime/attachments/bash-1', chars: 21 };
+    const mcp = { path: 'maka://runtime/attachments/mcp-1', chars: 20 };
+    const task = 'maka://runtime/task-outputs/task-1';
+    // Deleted dependencies remain in immutable historical receipts.
+    const gone = 'maka://runtime/attachments/gone-1';
     // Not in the source's folders at all.
     const elsewhere = '/var/folders/x/T/maka/tool-results/session-source/old.txt';
     const pipes = {
@@ -2987,7 +2896,7 @@ test('conversation copy carries saved outputs into the target folders and names 
           status: 'completed',
           exitCode: 0,
           output: pipes,
-          savedOutput: { path: bash.path, chars: bash.chars, truncated: false },
+          savedOutput: { ref: bash.path, chars: bash.chars, truncated: false },
         },
         `The full output is saved to ${bash.path}; read it with Read.`,
         1.2,
@@ -2996,7 +2905,11 @@ test('conversation copy carries saved outputs into the target folders and names 
       response(
         'mcp-call',
         'mcp__srv__fetch',
-        { kind: 'json', value: { content: [{ type: 'text', text: `saved to ${mcp.path};` }] } },
+        {
+          kind: 'json',
+          value: { content: [{ type: 'text', text: `saved to ${mcp.path};` }] },
+          fileRefs: [mcp.path],
+        },
         `saved to ${mcp.path};`,
         1.4,
       ),
@@ -3014,7 +2927,7 @@ test('conversation copy carries saved outputs into the target folders and names 
           startedAt: 1,
           updatedAt: 1,
           revision: 1,
-          outputFile: task,
+          outputRef: task,
         },
         `Output is being written to: ${task}. To check interim output, use Read.`,
         1.6,
@@ -3037,7 +2950,7 @@ test('conversation copy carries saved outputs into the target folders and names 
           status: 'completed',
           exitCode: 0,
           output: pipes,
-          savedOutput: { path: gone, chars: 10, truncated: false },
+          savedOutput: { ref: gone, chars: 10, truncated: false },
         },
         `saved to ${gone} and once to ${elsewhere}`,
         1.9,
@@ -3050,35 +2963,17 @@ test('conversation copy carries saved outputs into the target folders and names 
     );
     const plan = await prepareTestCopyPlan(source, source.messages, runStore, runtimeEventStore);
 
-    const named = collectConversationCopySavedOutputPaths({
-      folders: Object.values(conversationCopySavedOutputFolders(roots, 'session-source')),
-      messages: source.messages,
-      plan,
-    });
-    assert.deepEqual(named, [bash.path, gone, mcp.path, task].sort());
-    const savedOutputPaths = await copyConversationSavedOutputs({
-      roots,
+    const sites = {
       sourceSessionId: 'session-source',
-      targetSessionId: 'session-target',
-      paths: named,
-      ticket: toolResultSaveTicket(),
-    });
-    const target = (path: string, folder: string) => join(folder, 'session-target', basename(path));
-    assert.deepEqual(
-      savedOutputPaths,
-      new Map([
-        [bash.path, target(bash.path, roots.toolResults)],
-        [mcp.path, target(mcp.path, roots.toolResults)],
-        [task, target(task, roots.taskOutputs)],
-      ]),
-      'a file already gone is not copied',
-    );
-    // One file, two names.
-    assert.equal(
-      (await stat(target(bash.path, roots.toolResults))).ino,
-      (await stat(bash.path)).ino,
-    );
-
+      messages: source.messages,
+      runtimeEvents: plan.runs.flatMap((run) => run.runtimeEvents),
+    };
+    assert.deepEqual([...collectConversationCopySessionFileRefs(sites)].sort(), [
+      'bash-1',
+      'gone-1',
+      'mcp-1',
+    ]);
+    assert.deepEqual(collectConversationCopyTaskOutputIds(sites), ['task-1']);
     const cloned = await cloneConversationRuntimeLedger({
       plan,
       copiedMessages: source.messages,
@@ -3087,9 +2982,7 @@ test('conversation copy carries saved outputs into the target folders and names 
         linkedChildren: { mode: 'reject' },
         sourceSessionId: 'session-source',
         targetSessionId: 'session-target',
-        artifactIds: new Map(),
-        relativePaths: new Map(),
-        savedOutputPaths,
+        artifactIds: new Set([]),
       },
       runStore,
       runtimeEventStore,
@@ -3109,33 +3002,31 @@ test('conversation copy carries saved outputs into the target folders and names 
       assert.ok(content, id);
       return content;
     };
-    const newBash = target(bash.path, roots.toolResults);
-    const newMcp = target(mcp.path, roots.toolResults);
-    const newTask = target(task, roots.taskOutputs);
     const bashResult = responseTo('bash-call');
     assert.deepEqual((bashResult.result as { savedOutput?: unknown }).savedOutput, {
-      path: newBash,
+      ref: bash.path,
       chars: bash.chars,
       truncated: false,
     });
     assert.deepEqual(bashResult.modelProjection, {
       version: 1,
       kind: 'text',
-      text: `The full output is saved to ${newBash}; read it with Read.`,
+      text: `The full output is saved to ${bash.path}; read it with Read.`,
     });
     assert.deepEqual(responses.get('mcp-call')?.result, {
       kind: 'json',
-      value: { content: [{ type: 'text', text: `saved to ${newMcp};` }] },
+      value: { content: [{ type: 'text', text: `saved to ${mcp.path};` }] },
+      fileRefs: [mcp.path],
     });
     assert.deepEqual(responses.get('mcp-call')?.modelProjection, {
       version: 1,
       kind: 'text',
-      text: `saved to ${newMcp};`,
+      text: `saved to ${mcp.path};`,
     });
-    assert.equal((responseTo('task-call').result as { outputFile?: unknown }).outputFile, newTask);
+    assert.equal((responseTo('task-call').result as { outputRef?: unknown }).outputRef, task);
     assert.ok(
       (responseTo('task-call').modelProjection as { text: string }).text.includes(
-        `written to: ${newTask}.`,
+        `written to: ${task}.`,
       ),
     );
     const notice = events.find(
@@ -3143,11 +3034,11 @@ test('conversation copy carries saved outputs into the target folders and names 
     );
     assert.deepEqual(notice?.content, {
       kind: 'text',
-      text: `<output-file>${newTask}</output-file>`,
+      text: `<output-file>${task}</output-file>`,
     });
     // A file that was gone, and a path outside the source's folders, stay as they were.
     assert.equal(
-      (responseTo('gone-call').result as { savedOutput: { path: string } }).savedOutput.path,
+      (responseTo('gone-call').result as { savedOutput: { ref: string } }).savedOutput.ref,
       gone,
     );
     assert.equal(
@@ -3162,23 +3053,16 @@ test('conversation copy carries saved outputs into the target folders and names 
       bashCall?.content?.kind === 'function_call' ? bashCall.content.args : undefined,
       { command: `cat ${bash.path}` },
     );
-    // The copied transcript names the target's copy too.
+    // The copied transcript retains the original path too.
     const copiedResult = cloned.copiedMessages.find(
       (message) => message.type === 'tool_result' && message.toolUseId === 'bash-call',
     );
     assert.equal(
       copiedResult?.type === 'tool_result' && copiedResult.content.kind === 'terminal'
-        ? copiedResult.content.savedOutput?.path
+        ? copiedResult.content.savedOutput?.ref
         : undefined,
-      newBash,
+      bash.path,
     );
-
-    // The source can go; the target keeps its own.
-    await purgeSessionToolResultFiles(roots.toolResults, 'session-source');
-    await rm(join(roots.taskOutputs, 'session-source'), { recursive: true, force: true });
-    assert.equal(await readFile(newBash, 'utf8'), 'the whole bash output');
-    assert.equal(await readFile(newMcp, 'utf8'), 'the whole mcp output');
-    assert.equal(await readFile(newTask, 'utf8'), 'task output\n\n[exited with code 0]\n');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

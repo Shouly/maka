@@ -18,6 +18,8 @@
  */
 
 import { z } from 'zod';
+import { formatAttachmentResourceRef } from '@maka/core/attachments';
+import type { AgentOutputResult } from './session-manager.js';
 import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
 import { isSafeSubagentPresetId } from '@maka/core/subagent-settings';
 import { TOOL_NAMES } from '@maka/core/tool-names';
@@ -496,7 +498,7 @@ export function buildSubagentOutputTool(): MakaTool<
               : input.locator === 'legacy_turn'
                 ? { turnId: input.turn_id! }
                 : undefined;
-      return await ctx.readChildAgentOutput({
+      const output = await ctx.readChildAgentOutput({
         ...(explicitLocator ??
           (input.child_session_id
             ? {
@@ -520,6 +522,46 @@ export function buildSubagentOutputTool(): MakaTool<
         ...(input.max_bytes !== undefined ? { maxBytes: input.max_bytes } : {}),
         ...(input.view !== undefined ? { view: input.view } : {}),
       });
+      // The query returns only already-held files. Declare those dependencies
+      // at this result boundary so projection/copy need no child-owner fallback.
+      const result = output as Partial<AgentOutputResult> | undefined;
+      const records = result?.artifacts ?? [];
+      const ids = [
+        ...new Set([...(result?.result?.artifactIds ?? []), ...records.map((record) => record.id)]),
+      ];
+      if (ids.length === 0) return output;
+      return {
+        kind: 'json',
+        value: {
+          ...result,
+          artifacts: records.map(({ relativePath: _privateBlobPath, ...file }) => file),
+        },
+        fileRefs: ids.map(
+          (id) =>
+            formatAttachmentResourceRef({
+              kind: 'session_file',
+              sessionId: ctx.sessionId,
+              relativePath: id,
+            })!,
+        ),
+      } satisfies ToolResultContent;
+    },
+    toModelOutput: ({ output }) => {
+      const wrapped = output as { kind?: string; value?: Partial<AgentOutputResult> } | undefined;
+      const value = wrapped?.value;
+      if (wrapped?.kind !== 'json' || !value || !Array.isArray(value.artifacts)) return undefined;
+      const { artifactIds: _ids, ...committed } = value.result ?? {};
+      return {
+        type: 'text',
+        value: JSON.stringify({
+          ...value,
+          ...(value.result ? { result: committed } : {}),
+          artifacts: value.artifacts.map(
+            ({ id: _id, sessionId: _owner, turnId: _producer, relativePath: _blob, ...metadata }) =>
+              metadata,
+          ),
+        }),
+      };
     },
   };
 }

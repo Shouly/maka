@@ -85,8 +85,8 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
   onOpenArtifact?: (artifactId: string) => void;
   /** The path route, for a pane that can only resolve a workspace path. */
   onOpenFile?: (path: string | undefined) => void;
-  /** Reveals the delivered file itself — never a copy of it. */
-  onShowDeliveredFile?: (path: string | undefined) => void;
+  /** Reveals the saved delivery, independent of its original working path. */
+  onShowDeliveredFile?: (artifactId: string) => void;
 }) {
   const locale = useUiLocale();
   const copy = getTranscriptCopy(locale).delivery;
@@ -121,7 +121,9 @@ export const UserFileDeliveryResult = memo(function UserFileDeliveryResult(props
           key={file.artifactId}
           file={file}
           {...(open ? { onOpen: open(file) } : {})}
-          {...(onShowDeliveredFile ? { onShowInFolder: () => onShowDeliveredFile(file.path) } : {})}
+          {...(onShowDeliveredFile
+            ? { onShowInFolder: () => onShowDeliveredFile(file.artifactId) }
+            : {})}
         />
       ))}
     </div>

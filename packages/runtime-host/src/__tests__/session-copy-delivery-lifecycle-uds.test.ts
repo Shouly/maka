@@ -18,14 +18,19 @@
  */
 
 import assert from 'node:assert/strict';
-import { writeFile, readFile, rm } from 'node:fs/promises';
+import { writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { isArtifactUserVisible } from '@maka/core/artifacts';
+import { createHostFileResourceService } from '../server/file-resource-service.js';
+import { createSqliteShellRunStore } from '@maka/storage/shell-run-store';
+import { taskOutputRoot } from '@maka/runtime/shell-run-output-file';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
 import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
 import { DURABLE_TOOL_RESULT_PROJECTION_FAILURE } from '@maka/core/durable-tool-result-projection';
 import { decodeCanonicalToolResultContent } from '@maka/core/tool-result-record-schema';
 import { buildSendUserFileTool, sendUserFileModelText } from '@maka/runtime/send-user-file-tool';
+import { buildBuiltinTools } from '@maka/runtime/builtin-tools';
 import { seedInvocation } from '@maka/runtime/test-only/invocation-fixture';
 import {
   saveToolResultText,
@@ -84,8 +89,11 @@ test(
             copies.push({ sessionId, available: source.files.length - index - 1 });
             const page = await client.request('artifact.query', { kind: 'list_start', sessionId });
             assert.ok(page.kind === 'page');
-            assert.equal(page.artifacts.length, source.files.length - index - 1);
-            for (const artifact of page.artifacts) {
+            assert.equal(
+              page.artifacts.filter(isArtifactUserVisible).length,
+              source.files.length - index - 1,
+            );
+            for (const artifact of page.artifacts.filter(isArtifactUserVisible)) {
               const bytes = await client.request('artifact.query', {
                 kind: 'read_chunk',
                 sessionId,
@@ -107,22 +115,18 @@ test(
       assert.ok(owner);
       const stores = await openInteractiveExecutionStoresForWrite(owner.lease);
       try {
-        for (const { sessionId, available } of copies) {
+        for (const { sessionId } of copies) {
           const messages = await readLedgerMessages(stores.runtimeEventStore, sessionId);
           const receipt = messages.find(
             (message) => message.type === 'tool_result' && message.toolUseId === 'delivery-call',
           );
           assert.ok(receipt?.type === 'tool_result');
           assert.deepEqual(decodeCanonicalToolResultContent(receipt.content), receipt.content);
-          if (available === 0) {
-            assert.ok(receipt.content.kind === 'text');
-            assert.match(receipt.content.text, /no longer available/);
-          } else {
-            assert.ok(receipt.content.kind === 'user_file_delivery');
-            assert.equal(receipt.content.files.length, 1);
-            assert.equal(receipt.content.files[0]!.name, 'keep.txt');
-            assert.notEqual(receipt.content.files[0]!.artifactId, source.files[1]!.artifactId);
-          }
+          assert.deepEqual(
+            receipt.content,
+            source,
+            'deletion changes availability, never historical delivery',
+          );
           const response = (await eventsFor(stores, sessionId)).find(
             (event) =>
               event.content?.kind === 'function_response' && event.content.id === 'delivery-call',
@@ -131,14 +135,11 @@ test(
           assert.deepEqual(response.content.modelProjection, {
             version: 1,
             kind: 'text',
-            text:
-              receipt.content.kind === 'text'
-                ? receipt.content.text
-                : sendUserFileModelText(receipt.content),
+            text: sendUserFileModelText(source),
           });
           const checkpoints = await checkpointsFor(stores, sessionId);
-          assert.equal(checkpoints.length, 1, 'only the summary before delivery survives');
-          assert.ok(!JSON.stringify(checkpoints).includes(source.files[0]!.artifactId));
+          assert.equal(checkpoints.length, 2);
+          assert.ok(JSON.stringify(checkpoints).includes(source.files[0]!.artifactId));
         }
         const original = (
           await readLedgerMessages(stores.runtimeEventStore, fixture.sessionId)
@@ -161,7 +162,7 @@ test(
 );
 
 test(
-  'repeated copies keep delivery paths and model receipts consistent and drop stale summaries',
+  'repeated copies keep historical deliveries and summaries and resolve their own files',
   OPTIONS,
   async () => {
     await withExecutionRoot(async (fixture) => {
@@ -171,6 +172,23 @@ test(
       try {
         assert.equal((await copy(client, fixture.sessionId, 'delivery-first')).kind, 'committed');
         assert.equal((await copy(client, 'delivery-first', 'delivery-second')).kind, 'committed');
+        for (const sessionId of ['delivery-first', 'delivery-second']) {
+          const page = await client.request('artifact.query', { kind: 'list_start', sessionId });
+          assert.ok(page.kind === 'page');
+          assert.deepEqual(
+            new Set(page.artifacts.filter(isArtifactUserVisible).map((file) => file.id)),
+            new Set(source.files.map((file) => file.artifactId)),
+            'the Files pane uses the same historical ids as delivery cards',
+          );
+          const resolved = await client.request('artifact.query', {
+            kind: 'read_chunk',
+            sessionId,
+            artifactId: source.files[0]!.artifactId,
+            offset: 0,
+          });
+          assert.ok(resolved.kind === 'chunk');
+          assert.equal(Buffer.from(resolved.chunkBase64, 'base64').toString(), 'saved log');
+        }
         for (const file of source.files) {
           assert.equal(
             (
@@ -182,6 +200,8 @@ test(
             'deleted',
           );
         }
+        // No fallback to the old location can make the following reads succeed.
+        await rm(source.files[0]!.path);
       } finally {
         await client.close();
         await fixture.stopHost(host);
@@ -190,10 +210,56 @@ test(
       assert.ok(owner);
       const stores = await openInteractiveExecutionStoresForWrite(owner.lease);
       const artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+      const shellRuns = createSqliteShellRunStore(fixture.capability.canonicalPath);
       try {
-        let previousIds = source.files.map((file) => file.artifactId);
+        const sourceEvents = await eventsFor(stores, fixture.sessionId);
+        const sourceCalls = sourceEvents.flatMap((event) =>
+          event.content?.kind === 'function_call' || event.content?.kind === 'function_response'
+            ? [event.content]
+            : [],
+        );
+        const tools = buildBuiltinTools();
+        const files = createHostFileResourceService({
+          artifacts,
+          shellRuns,
+          taskOutputRoot: taskOutputRoot(fixture.capability.canonicalPath),
+        });
         for (const sessionId of ['delivery-first', 'delivery-second']) {
           const events = await eventsFor(stores, sessionId);
+          assert.deepEqual(
+            events.flatMap((event) =>
+              event.content?.kind === 'function_call' || event.content?.kind === 'function_response'
+                ? [event.content]
+                : [],
+            ),
+            sourceCalls,
+            'all historical call arguments, tool results and model projections are unchanged',
+          );
+          const ctx = {
+            sessionId,
+            turnId: 'read-copied-output',
+            toolCallId: 'read',
+            cwd: fixture.capability.canonicalPath,
+            abortSignal: new AbortController().signal,
+            emitOutput() {},
+          };
+          const ref = `maka://runtime/attachments/${source.files[0]!.artifactId}`;
+          const file = await files.materialize(sessionId, ref);
+          assert.ok(file);
+          const read = await tools
+            .find((tool) => tool.name === 'Read')!
+            .impl({ file_path: file.path }, ctx);
+          assert.match(JSON.stringify(read), /saved log/);
+          const grep = await tools
+            .find((tool) => tool.name === 'Grep')!
+            .impl({ path: file.path, pattern: 'saved', output_mode: 'count' }, ctx);
+          assert.deepEqual((grep as { matches: string[] }).matches, [`${file.path}:1`]);
+          assert.equal(await files.materialize('unrelated-session', ref), undefined);
+          await assert.rejects(async () =>
+            tools
+              .find((tool) => tool.name === 'Read')!
+              .impl({ file_path: source.files[0]!.path }, ctx),
+          );
           const responses = events.flatMap((event) =>
             event.content?.kind === 'function_response' ? [event.content] : [],
           );
@@ -201,16 +267,12 @@ test(
           assert.ok(response);
           const delivery = decodeCanonicalToolResultContent(response.result);
           assert.ok(delivery.kind === 'user_file_delivery');
-          const ids = delivery.files.map((file) => file.artifactId);
-          assert.ok(ids.every((id) => !previousIds.includes(id)));
-          previousIds = ids;
-          const copiedLog = toolResultFilePath(
-            toolResultRoot(fixture.capability.canonicalPath),
-            sessionId,
-            'saved-log',
+          assert.deepEqual(delivery, source, 'the whole historical receipt remains identical');
+          assert.equal(delivery.files[0]!.path, source.files[0]!.path);
+          assert.deepEqual(
+            await artifacts.readTextInSession(sessionId, delivery.files[0]!.artifactId),
+            { ok: true, text: 'saved log' },
           );
-          assert.equal(delivery.files[0]!.path, copiedLog);
-          assert.equal(await readFile(copiedLog, 'utf8'), 'saved log');
           assert.equal(
             delivery.files[1]!.path,
             source.files[1]!.path,
@@ -219,7 +281,10 @@ test(
           assert.deepEqual(response.modelProjection, {
             version: 1,
             kind: 'text',
-            text: sendUserFileModelText(delivery),
+            text: sendUserFileModelText(source).replace(
+              source.files[0]!.path,
+              '/previous-copy/saved-log.txt',
+            ),
           });
           for (const file of delivery.files) {
             const read = await artifacts.readTextInSession(sessionId, file.artifactId);
@@ -238,13 +303,14 @@ test(
             { version: 1, kind: 'text', text: 'custom projection' },
           );
           const checkpoints = await checkpointsFor(stores, sessionId);
-          assert.equal(checkpoints.length, 1);
+          assert.equal(checkpoints.length, 2);
           assert.ok(checkpoints[0]?.data?.checkpoint);
           assert.ok(
-            !source.files.some((file) => JSON.stringify(checkpoints).includes(file.artifactId)),
+            source.files.every((file) => JSON.stringify(checkpoints).includes(file.artifactId)),
           );
         }
       } finally {
+        shellRuns.close();
         artifacts.close();
         await stores.sessionStore.close?.();
         await owner.close();
@@ -275,7 +341,7 @@ test(
       try {
         await assert.rejects(
           copy(client, fixture.sessionId, 'missing-payload-copy'),
-          /Artifact .* could not be copied: not_found/,
+          /Artifact .* content is unavailable/,
         );
       } finally {
         await client.close();
@@ -330,7 +396,7 @@ async function checkpointsFor(stores: Stores, sessionId: string) {
     .filter((event) => event.type === 'history_compact_checkpoint_recorded');
 }
 
-async function seedDelivery(fixture: ExecutionFixture, legacyReceipt = false) {
+async function seedDelivery(fixture: ExecutionFixture, customProjection = false) {
   const owner = await tryAcquireInteractiveRootOwner(fixture.capability);
   assert.ok(owner);
   const stores = await openInteractiveExecutionStoresForWrite(owner.lease);
@@ -404,7 +470,7 @@ async function seedDelivery(fixture: ExecutionFixture, legacyReceipt = false) {
         projection: {
           version: 1,
           kind: 'text',
-          text: legacyReceipt
+          text: customProjection
             ? sendUserFileModelText(delivery).replace(saved.path, '/previous-copy/saved-log.txt')
             : sendUserFileModelText(delivery),
         },

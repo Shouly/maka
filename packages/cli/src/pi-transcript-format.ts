@@ -147,8 +147,8 @@ export function formatToolResultContent(content: ToolResultContent): string {
 export function savedTerminalOutputText(saved: TerminalSavedOutput): string {
   const chars = `${saved.chars.toLocaleString('en-US')} chars`;
   return saved.truncated
-    ? `Output too large to save whole: ${chars} of it saved to ${saved.path}, with a line marking what was left out`
-    : `Full output (${chars}) saved to ${saved.path}`;
+    ? `Output too large to save whole: ${chars} of it saved to ${saved.ref}, with a line marking what was left out`
+    : `Full output (${chars}) saved to ${saved.ref}`;
 }
 
 function formatShellOutput(output: ShellOutput): string {

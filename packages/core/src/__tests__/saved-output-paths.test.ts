@@ -19,142 +19,69 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { RuntimeEvent } from '../runtime-event.js';
-import type { ToolResultContent } from '../events.js';
 import {
-  rewriteRuntimeEventSavedOutputPaths,
-  rewriteToolResultContentSavedOutputPaths,
-  savedOutputPathMapRewrite,
-  savedOutputPathRecorder,
-  savedOutputPathRewrite,
-} from '../saved-output-paths.js';
+  taskOutputResourceRef,
+  parseTaskOutputResourceRef,
+  toolResultStorageRefs,
+} from '../file-resources.js';
+import { decodeCanonicalToolResultContent } from '../tool-result-record-schema.js';
+import { SAVED_OUTPUT_FILE_NAME } from '../saved-output-paths.js';
 
-const FOLDER = '/state/tool-results/session-a';
+test('task output refs are portable, scoped by the caller, and distinct from file refs', () => {
+  const ref = taskOutputResourceRef('sr_task');
+  assert.equal(ref, 'maka://runtime/task-outputs/sr_task');
+  assert.deepEqual(parseTaskOutputResourceRef(ref), { shellRunId: 'sr_task' });
+  for (const bad of [
+    '/tmp/tasks/s/sr_task.output',
+    `${ref}?session=other`,
+    `${ref}#x`,
+    `${ref}/more`,
+    'maka://runtime/attachments/sr_task',
+  ])
+    assert.equal(parseTaskOutputResourceRef(bad), null);
+  assert.equal(SAVED_OUTPUT_FILE_NAME.test('sr_task.output'), true);
+  assert.equal(SAVED_OUTPUT_FILE_NAME.test('../sr_task.output'), false);
+});
 
-test('delivery paths participate in saved-output collection and rewriting', () => {
-  const path = `${FOLDER}/r-1.txt`;
-  const delivery: ToolResultContent = {
-    kind: 'user_file_delivery',
-    status: 'normal',
-    display: 'attach',
-    files: [path, '/workspace/report.md'].map((path, index) => ({
-      artifactId: `file-${index}`,
-      name: 'report.txt',
-      path,
-      kind: 'file',
-      sizeBytes: 10,
-    })),
-  };
-  const found = new Set<string>();
-  assert.equal(
-    rewriteToolResultContentSavedOutputPaths(delivery, savedOutputPathRecorder([FOLDER], found)),
-    delivery,
-  );
-  assert.deepEqual([...found], [path]);
-  const rewritten = rewriteToolResultContentSavedOutputPaths(
-    delivery,
-    savedOutputPathMapRewrite(new Map([[path, '/state/tool-results/target/r-1.txt']])),
-  );
-  assert.ok(rewritten.kind === 'user_file_delivery');
+test('opaque output dependencies are explicit; paths and refs in prose are not authorities', () => {
+  const ref = 'maka://runtime/attachments/report';
+  const content = decodeCanonicalToolResultContent({
+    kind: 'json',
+    value: { content: [{ type: 'text', text: `Read ${ref}` }] },
+    fileRefs: [ref],
+  });
+  assert.deepEqual(toolResultStorageRefs(content, 's'), [
+    { kind: 'session_file', sessionId: 's', relativePath: 'report' },
+  ]);
   assert.deepEqual(
-    rewritten.files.map((file) => file.path),
-    ['/state/tool-results/target/r-1.txt', '/workspace/report.md'],
+    toolResultStorageRefs({ kind: 'text', text: `Read ${ref} or /old/tasks/s/task.output` }, 's'),
+    [],
   );
-  assert.equal(rewritten.files[0]!.artifactId, 'file-0');
-  assert.equal(rewritten.files[1], delivery.files[1]);
-  assert.equal(delivery.files[0]!.path, path, 'source metadata is immutable');
-});
-
-test('a saved-output path is matched whole, and only in the folders given', () => {
-  const rewrite = savedOutputPathRewrite([FOLDER], (path) => path.replace('session-a', 'b'));
-  assert.equal(
-    rewrite(`saved to ${FOLDER}/r-1.txt; read it.`),
-    'saved to /state/tool-results/b/r-1.txt; read it.',
-  );
-  assert.equal(
-    rewrite(`written to: ${FOLDER}/task_1.output. To check`),
-    'written to: /state/tool-results/b/task_1.output. To check',
-  );
-  for (const untouched of [
-    // Another Session's folder that starts with the same characters.
-    '/state/tool-results/session-ab/r-1.txt',
-    // A path that only ends in the folder.
-    `/copy${FOLDER}/r-1.txt`,
-    // A file deeper than the folder, or of another kind.
-    `${FOLDER}/nested/r-1.txt`,
-    `${FOLDER}/r-1.json`,
-    `${FOLDER}/r-1.txtx`,
-  ]) {
-    assert.equal(rewrite(untouched), untouched, untouched);
-  }
-  const windows = savedOutputPathRewrite(['C:\\state\\tool-results\\s'], () => 'moved');
-  assert.equal(windows('at C:\\state\\tool-results\\s\\r.txt.'), 'at moved.');
-
-  const mapped = savedOutputPathMapRewrite(
-    new Map([[`${FOLDER}/r-1.txt`, '/state/tool-results/b/r-1.txt']]),
-  );
-  assert.equal(
-    mapped(`${FOLDER}/r-1.txt and ${FOLDER}/r-2.txt`),
-    `/state/tool-results/b/r-1.txt and ${FOLDER}/r-2.txt`,
-    'a path the map does not name stays',
+  assert.throws(() =>
+    decodeCanonicalToolResultContent({ kind: 'text', text: '', fileRefs: ['/tmp/output'] }),
   );
 });
 
-test("a RuntimeEvent's tool result, model view and text move; a tool call does not", () => {
-  const path = `${FOLDER}/r-1.txt`;
-  const rewrite = savedOutputPathRewrite([FOLDER], () => '/moved/r-1.txt');
-  const base = {
-    id: 'event',
-    invocationId: 'invocation',
-    runId: 'run',
-    sessionId: 'session-a',
-    turnId: 'turn',
-    ts: 1,
-    partial: false,
-  } as const;
-  const call: RuntimeEvent = {
-    ...base,
-    role: 'model',
-    author: 'agent',
-    content: { kind: 'function_call', id: 'call', name: 'Read', args: { file_path: path } },
-  };
-  assert.equal(rewriteRuntimeEventSavedOutputPaths(call, rewrite), call);
-
-  const response: RuntimeEvent = {
-    ...base,
-    role: 'tool',
-    author: 'tool',
-    content: {
-      kind: 'function_response',
-      id: 'call',
-      name: 'mcp__srv__fetch',
-      result: { kind: 'json', value: { content: [{ type: 'text', text: `saved to ${path};` }] } },
-      modelProjection: { version: 1, kind: 'content', parts: [{ kind: 'text', text: path }] },
-    },
-  };
-  assert.deepEqual(rewriteRuntimeEventSavedOutputPaths(response, rewrite).content, {
-    ...response.content,
-    result: {
-      kind: 'json',
-      value: { content: [{ type: 'text', text: 'saved to /moved/r-1.txt;' }] },
-    },
-    modelProjection: {
-      version: 1,
-      kind: 'content',
-      parts: [{ kind: 'text', text: '/moved/r-1.txt' }],
-    },
+test('detached child snapshots retain explicit file dependencies in the owning Session', () => {
+  const snapshot = decodeCanonicalToolResultContent({
+    kind: 'agent_swarm',
+    status: 'completed',
+    startedAt: 1,
+    completedAt: 2,
+    durationMs: 1,
+    items: [
+      {
+        itemId: 'item',
+        index: 0,
+        profile: 'default',
+        started: true,
+        status: 'completed',
+        summary: 'done',
+        artifactIds: ['report'],
+      },
+    ],
   });
-
-  const text: RuntimeEvent = {
-    ...base,
-    role: 'user',
-    author: 'system',
-    content: { kind: 'text', text: `<output-file>${path}</output-file>` },
-  };
-  assert.deepEqual(rewriteRuntimeEventSavedOutputPaths(text, rewrite).content, {
-    kind: 'text',
-    text: '<output-file>/moved/r-1.txt</output-file>',
-  });
-  const unrelated: RuntimeEvent = { ...text, content: { kind: 'text', text: 'nothing here' } };
-  assert.equal(rewriteRuntimeEventSavedOutputPaths(unrelated, rewrite), unrelated);
+  assert.deepEqual(toolResultStorageRefs(snapshot, 'branch'), [
+    { kind: 'session_file', sessionId: 'branch', relativePath: 'report' },
+  ]);
 });

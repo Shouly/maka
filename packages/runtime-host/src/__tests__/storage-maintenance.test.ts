@@ -32,7 +32,7 @@ test('maintenance waits for start, yields between bounded batches, and stops on 
   let collections = 0;
   const maintenance = new HostStorageMaintenance({
     artifacts: {
-      reclaimUpgradeResidue: async (input) => {
+      collectGarbage: async (input) => {
         assert.equal(input.maxPaths, 64);
         cursors.push(input.after);
         return {
@@ -84,7 +84,7 @@ test('failed lanes back off independently, retry, and reset after success', asyn
   const errors: string[] = [];
   const maintenance = new HostStorageMaintenance({
     artifacts: {
-      reclaimUpgradeResidue: async () => {
+      collectGarbage: async () => {
         pages += 1;
         return { nextAfter: String(pages), processedPaths: 64, failedPaths: 0 };
       },
@@ -133,7 +133,7 @@ test('close waits only for an admitted batch and never starts another one', asyn
   let calls = 0;
   const maintenance = new HostStorageMaintenance({
     artifacts: {
-      reclaimUpgradeResidue: async () => {
+      collectGarbage: async () => {
         calls += 1;
         await blocked;
         return { nextAfter: 'more', processedPaths: 64, failedPaths: 0 };
@@ -162,7 +162,7 @@ test('failed paths do not pin the pagination cursor, and another sweep retries t
   const cursors: (string | undefined)[] = [];
   const maintenance = new HostStorageMaintenance({
     artifacts: {
-      reclaimUpgradeResidue: async (input) => {
+      collectGarbage: async (input) => {
         cursors.push(input.after);
         return {
           nextAfter: cursors.length === 1 ? 'failed-path' : null,

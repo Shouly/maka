@@ -169,6 +169,9 @@ export async function prepareAgentGraphRevisionReferences(
   for (const request of requests) {
     const childSessionId = request.childSessionId;
     const child = headersById.get(childSessionId);
+    // A detached branch keeps reports and its source's committed file holdings,
+    // not control of a deleted child. No lookup or grant through that child is needed.
+    if (!child && snapshotChildren) continue;
     const parent = child?.subagentParent;
     if (
       !child ||
@@ -241,11 +244,11 @@ export async function prepareAgentGraphRevisionReferences(
     // Session or a lineage was never admissible and still fails.
     for (const artifactId of request.artifactIds) {
       const artifact = await dependencies.artifacts
-        .getInSession(childSessionId, artifactId)
+        .getInSession(input.sourceSessionId, artifactId)
         .catch(() => null);
       if (!artifact?.record) continue;
       if (
-        artifact.record.sessionId !== childSessionId ||
+        artifact.record.sessionId !== input.sourceSessionId ||
         !lineage.turnIds.has(artifact.record.turnId)
       ) {
         return failure('operation_unavailable', 'Retained Agent Graph Artifact is unavailable');
@@ -271,10 +274,7 @@ export async function prepareAgentGraphRevisionReferences(
     }
     const runs = runsByChildSession.get(notification.childSessionId)!;
     for (const artifactId of notification.artifactIds) {
-      const artifact = await dependencies.artifacts.getInSession(
-        notification.childSessionId,
-        artifactId,
-      );
+      const artifact = await dependencies.artifacts.getInSession(input.sourceSessionId, artifactId);
       if (!artifact?.record) continue;
       const record = artifact.record;
       const turn = [...runs.values()].find(
@@ -286,7 +286,7 @@ export async function prepareAgentGraphRevisionReferences(
           run.terminalEvent.ts <= notification.ts,
       );
       if (
-        record.sessionId !== notification.childSessionId ||
+        record.sessionId !== input.sourceSessionId ||
         !turn ||
         record.createdAt > notification.ts
       ) {

@@ -2432,7 +2432,7 @@ describe('Maka Pi TUI transcript', () => {
   });
 
   test('a Bash output saved to a file reports its size and path, not the preview line count', () => {
-    const path = '/tmp/maka/tool-results/session-1/result.txt';
+    const path = 'maka://runtime/attachments/saved-output';
     const preview = Array.from({ length: 20 }, (_, index) => `preview-${index}`).join('\n');
     const state = createMakaPiTranscriptState();
     applyMakaSessionEventToTranscript(
@@ -2452,7 +2452,7 @@ describe('Maka Pi TUI transcript', () => {
         isError: false,
         content: {
           ...terminalResult(preview),
-          savedOutput: { path, chars: 40_123, truncated: false },
+          savedOutput: { ref: path, chars: 40_123, truncated: false },
         },
       }),
     );
@@ -2494,7 +2494,11 @@ describe('Maka Pi TUI transcript', () => {
         isError: false,
         content: {
           ...terminalResult('y\ny'),
-          savedOutput: { path: '/tmp/cut.txt', chars: 67_108_864, truncated: true },
+          savedOutput: {
+            ref: 'maka://runtime/attachments/cut',
+            chars: 67_108_864,
+            truncated: true,
+          },
         },
       }),
     );
@@ -2504,7 +2508,7 @@ describe('Maka Pi TUI transcript', () => {
     const expanded = renderMakaPiTranscript(state, meta(), 160).map(stripAnsi).join('\n');
     assert.match(
       expanded,
-      /Output too large to save whole: 67,108,864 chars of it saved to \/tmp\/cut\.txt, with a line marking what was left out/,
+      /Output too large to save whole: 67,108,864 chars of it saved to maka:\/\/runtime\/attachments\/cut, with a line marking what was left out/,
     );
     // True for a cut at the size limit and for a long line left out alike.
     assert.doesNotMatch(expanded, /MiB|first 67,108,864/);

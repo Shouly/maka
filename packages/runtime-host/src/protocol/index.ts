@@ -179,7 +179,14 @@ export const RUNTIME_HOST_PROTOCOL_VERSION = 0 as const;
 // 172: a compaction decision in a context budget may carry
 // `summarizerOmittedToolOutputs`, the tool outputs a summary was made without.
 // An old client decodes context budgets by their exact keys and rejects it.
-export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 172 as const;
+// 173: Runtime Resource queries resolve historical saved-output paths through
+// Session-owned bindings. Older Hosts reject the new query kind.
+// 174: Shared immutable file resources and saved output refs.
+// 175: File results are ref-only, live task output has its own resource ref,
+// and the Host no longer exposes historical-path resolution queries.
+// 176: Model-facing saved files bind to real execution paths; durable refs
+// remain internal storage identities, without adding model tools.
+export const RUNTIME_HOST_COMPATIBILITY_EPOCH = 176 as const;
 // 155: A tool call is on the wire while the model is still writing it.
 // `subscription.session_event` carries `tool_input_start` and
 // `tool_input_delta`, which a Client that does not know them decodes as an

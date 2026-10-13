@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { parseTaskOutputResourceRef, toolResultStorageRefs } from '@maka/core/file-resources';
+import { parseShellRunResourceRef } from './shell-run-contract.js';
 import type { AgentRunEvent, AgentRunStore, EmittedAgentRunEvent } from '@maka/core/agent-run';
 import {
   isPartialRuntimeEvent,
@@ -30,12 +32,9 @@ import {
 import type { RuntimeInvocationRecord } from '@maka/core/runtime-invocation';
 import type { RuntimeEventStore } from '@maka/core/runtime-event-store';
 import { type StorageRef, type ToolResultContent } from '@maka/core/events';
-import type { DurableToolResultProjection } from '@maka/core/durable-tool-result-projection';
-import { parseAttachmentResourceRef } from '@maka/core/attachments';
 import { markPersisted } from '@maka/core/persisted-value';
 import type { StoredMessage } from '@maka/core/session';
 import { decodePersistedToolResultContent } from '@maka/core/tool-result-record-schema';
-import { TOOL_NAMES } from '@maka/core/tool-names';
 import { isEmittedAgentRunEventType } from '@maka/core/agent-run';
 import {
   decodeModelCallAttempt,
@@ -57,35 +56,12 @@ import {
 import { buildToolOperationId } from './runtime-commit-sink.js';
 import { isContinuationStartRuntimeEvent } from './runtime-event-read-model.js';
 import { runtimeHandoffPause } from '@maka/core/runtime-handoff';
-import {
-  rewriteDurableToolResultProjectionSavedOutputPaths,
-  rewriteOpaqueSavedOutputPaths,
-  rewriteRuntimeEventSavedOutputPaths,
-  rewriteToolResultContentSavedOutputPaths,
-  savedOutputPathMapRewrite,
-  savedOutputPathRecorder,
-  type SavedOutputPathRewrite,
-} from '@maka/core/saved-output-paths';
-import { dirname } from 'node:path';
-import {
-  encodeDurableToolResultOutput,
-  rewriteDurableToolResultProjectionArtifactRefs,
-} from './durable-tool-result-projection.js';
-import { sendUserFileModelText } from './send-user-file-tool.js';
-import { taskOutputSessionFolder } from './shell-run-output-file.js';
-import {
-  collectConversationCopyChildNotifications,
-  rewriteConversationCopyNotificationArtifacts,
-} from './conversation-copy-notifications.js';
+import { rewriteDurableToolResultProjectionArtifactRefs } from './durable-tool-result-projection.js';
+import { collectConversationCopyTaskOutputNotifications } from './conversation-copy-notifications.js';
 export {
   collectConversationCopyChildNotifications,
   type ConversationCopyChildNotification,
 } from './conversation-copy-notifications.js';
-import {
-  linkSavedOutputFile,
-  savedOutputFileIn,
-  toolResultSessionFolder,
-} from './tool-result-file.js';
 
 export interface ConversationCopySlice {
   readonly messages: readonly StoredMessage[];
@@ -117,15 +93,8 @@ export interface ConversationCopyLinkedChildReference {
 export type ConversationCopyArtifactReferenceMap =
   | (ConversationCopyIdentityMap & {
       readonly mode: 'exact';
-      readonly artifactIds: ReadonlyMap<string, string>;
-      readonly relativePaths: ReadonlyMap<string, string>;
+      readonly artifactIds: ReadonlySet<string>;
       readonly contextRefs?: ReadonlyMap<string, string>;
-      /**
-       * Saved tool output and task output files the copy put in the target's
-       * own folders, by the source's absolute path. A path not here, such as
-       * one whose file was already gone, is left as the source had it.
-       */
-      readonly savedOutputPaths?: ReadonlyMap<string, string>;
       readonly linkedChildren:
         | { readonly mode: 'reject' }
         | { readonly mode: 'snapshot' }
@@ -190,17 +159,7 @@ function collectConversationCopyStorageRefs(
 ): readonly StorageRef[] {
   const refs: StorageRef[] = [];
   const addContent = (content: ToolResultContent): void => {
-    if (content.kind === 'image') refs.push(content.ref);
-    // Delivery cards carry a bare Artifact id, implicitly owned by this Session.
-    if (content.kind === 'user_file_delivery') {
-      for (const file of content.files) {
-        refs.push({
-          kind: 'session_file',
-          sessionId: input.sourceSessionId,
-          relativePath: file.artifactId,
-        });
-      }
-    }
+    refs.push(...toolResultStorageRefs(content, input.sourceSessionId));
   };
   const addSerialized = (value: unknown): void => {
     try {
@@ -221,6 +180,11 @@ function collectConversationCopyStorageRefs(
       for (const attachment of event.content.attachments) refs.push(attachment.ref);
     } else if (event.content?.kind === 'function_response') {
       addSerialized(event.content.result);
+      if (event.content.modelProjection)
+        rewriteDurableToolResultProjectionArtifactRefs(event.content.modelProjection, (ref) => {
+          refs.push(ref);
+          return ref;
+        });
     }
   }
   return refs;
@@ -241,91 +205,50 @@ export function collectConversationCopySessionContextRefIds(input: {
   return [...refIds].sort();
 }
 
-/**
- * The saved tool outputs and task outputs the copied slice names, in the
- * source Session's own folders (`folders`): where a tool result names its
- * saved file, and the text of a result, message or retained checkpoint that
- * names one. A path into any other folder is not the source's to copy.
- */
-export function collectConversationCopySavedOutputPaths(input: {
-  readonly folders: readonly string[];
+/** Live output views are explicit dependencies, not paths discovered in prose. */
+export function collectConversationCopyTaskOutputIds(input: {
   readonly messages: readonly StoredMessage[];
-  readonly plan: ConversationRuntimeLedgerCopyPlan;
+  readonly runtimeEvents: readonly RuntimeEvent[];
 }): readonly string[] {
-  const found = new Set<string>();
-  const record = savedOutputPathRecorder(input.folders, found);
-  for (const message of input.messages) {
-    if (message.type === 'tool_result') {
-      rewriteToolResultContentSavedOutputPaths(message.content, record);
-    } else if (message.type === 'assistant') {
-      record(message.text);
-    }
-  }
-  const plans = input.plan.runs.map(({ run, runtimeEvents }) => ({ run, events: runtimeEvents }));
-  const compactableByRun = sourceCompactableEventsByRunId(plans, input.plan.inlineRuntimeEvents);
-  const includedEventIds = new Set(plans.flatMap(({ events }) => events.map((event) => event.id)));
-  for (const { run, runtimeEvents, operationalEvents } of input.plan.runs) {
-    for (const event of runtimeEvents) rewriteRuntimeEventSavedOutputPaths(event, record);
-    for (const event of operationalEvents) {
-      const selected = selectConversationCopyCheckpoint(
-        event,
-        compactableByRun.get(run.runId) ?? [],
-        includedEventIds,
-      );
-      if (selected) record(selected.checkpoint.summary);
-    }
-  }
-  return [...found].sort();
-}
-
-/** Where a Host keeps saved output: tool results and background task output. */
-export interface ConversationCopySavedOutputRoots {
-  readonly toolResults: string;
-  readonly taskOutputs: string;
-}
-
-/** A Session's own folders of saved output, under `roots`. */
-export function conversationCopySavedOutputFolders(
-  roots: ConversationCopySavedOutputRoots,
-  sessionId: string,
-): { readonly toolResults: string; readonly taskOutputs: string } {
-  return {
-    toolResults: toolResultSessionFolder(roots.toolResults, sessionId),
-    taskOutputs: taskOutputSessionFolder(roots.taskOutputs, sessionId),
+  const ids = new Set<string>();
+  const addContent = (content: ToolResultContent) => {
+    if (content.kind !== 'shell_run' || !content.outputRef) return;
+    const output = parseTaskOutputResourceRef(content.outputRef);
+    if (output) ids.add(output.shellRunId);
   };
-}
-
-/**
- * Put every saved output in `paths` into the target Session's own folders,
- * under the same name, and answer where each went. A file that is no longer
- * there is left out, so its path stays as the source had it; the copy goes
- * on without it. `ticket` is the one the copy took when it started: a target
- * retired since then gets no file.
- */
-export async function copyConversationSavedOutputs(input: {
-  readonly roots: ConversationCopySavedOutputRoots;
-  readonly sourceSessionId: string;
-  readonly targetSessionId: string;
-  readonly paths: readonly string[];
-  readonly ticket: number;
-}): Promise<ReadonlyMap<string, string>> {
-  const source = conversationCopySavedOutputFolders(input.roots, input.sourceSessionId);
-  const target = conversationCopySavedOutputFolders(input.roots, input.targetSessionId);
-  const copied = new Map<string, string>();
-  for (const path of input.paths) {
-    const folder =
-      dirname(path) === source.toolResults
-        ? target.toolResults
-        : dirname(path) === source.taskOutputs
-          ? target.taskOutputs
-          : undefined;
-    if (folder === undefined) continue;
-    const destination = savedOutputFileIn(folder, path);
-    if (await linkSavedOutputFile(path, destination, input.ticket)) {
-      copied.set(path, destination);
+  const addOrigin = (origin: import('@maka/core/turn-origin').TurnOrigin | undefined) => {
+    if (origin?.kind !== 'background_task') return;
+    const task = parseShellRunResourceRef(origin.ref);
+    if (task) ids.add(task.shellRunId);
+  };
+  for (const message of input.messages) {
+    if (message.type === 'tool_result') addContent(message.content);
+    if (message.type === 'user') {
+      addOrigin(message.origin);
+      for (const id of collectConversationCopyTaskOutputNotifications([
+        {
+          role: 'user',
+          author: 'host',
+          partial: false,
+          ts: message.ts,
+          content: { kind: 'text', text: message.text, origin: message.origin },
+        },
+      ]))
+        ids.add(id);
     }
   }
-  return copied;
+  for (const event of input.runtimeEvents) {
+    if (event.content?.kind === 'function_response') {
+      try {
+        addContent(
+          decodePersistedToolResultContent(markPersisted<ToolResultContent>(event.content.result)),
+        );
+      } catch {}
+    }
+    if (event.content?.kind === 'text') addOrigin(event.content.origin);
+  }
+  for (const id of collectConversationCopyTaskOutputNotifications(input.runtimeEvents)) ids.add(id);
+  return [...ids].sort();
 }
 
 export interface CloneConversationRuntimeLedgerResult {
@@ -380,28 +303,12 @@ export function rewriteConversationCopyMessage(
   message: StoredMessage,
   references: ConversationCopyMessageReferenceMap,
 ): StoredMessage {
-  if (message.type === 'assistant' && references.mode === 'exact') {
-    return {
-      ...message,
-      text: savedOutputRewrite(references)(
-        rewriteAttachmentResourceRefs(message.text, references.artifactIds),
-      ),
-    };
-  }
   if (
     message.type === 'user' &&
     (message.attachments || message.origin?.kind === 'background_task')
   ) {
     return {
       ...message,
-      ...(references.mode === 'exact' && message.origin?.kind === 'background_task'
-        ? {
-            text: rewriteConversationCopyNotificationArtifacts(
-              rewriteAttachmentResourceRefs(message.text, references.artifactIds),
-              references.artifactIds,
-            ),
-          }
-        : {}),
       ...(message.attachments
         ? {
             attachments: message.attachments.map((attachment) => ({
@@ -429,32 +336,6 @@ export function rewriteConversationCopyMessage(
     };
   }
   return message;
-}
-
-/** The rewrite that moves a saved output's path to the target's copy of it. */
-function savedOutputRewrite(
-  references: ConversationCopyArtifactReferenceMap,
-): SavedOutputPathRewrite {
-  if (references.mode !== 'exact' || !references.savedOutputPaths) return (text) => text;
-  let rewrite = savedOutputRewrites.get(references.savedOutputPaths);
-  if (!rewrite) {
-    rewrite = savedOutputPathMapRewrite(references.savedOutputPaths);
-    savedOutputRewrites.set(references.savedOutputPaths, rewrite);
-  }
-  return rewrite;
-}
-
-const savedOutputRewrites = new WeakMap<ReadonlyMap<string, string>, SavedOutputPathRewrite>();
-
-function rewriteAttachmentResourceRefs(
-  text: string,
-  artifactIds: ReadonlyMap<string, string>,
-): string {
-  return text.replace(/maka:\/\/runtime\/attachments\/[^\s)\]}>`'",;:!]+/g, (candidate) => {
-    const parsed = parseAttachmentResourceRef(candidate);
-    const artifactId = parsed ? artifactIds.get(parsed.artifactId) : undefined;
-    return artifactId ? `maka://runtime/attachments/${artifactId}` : candidate;
-  });
 }
 
 export async function prepareConversationRuntimeLedgerCopy(input: {
@@ -871,20 +752,6 @@ function cloneAgentRunEvent(
       clonedRuntimeEvents,
     );
     if (!selected) return null;
-    // A summary may spell an old delivery or notification Artifact id in arbitrary prose.
-    // Keep its canonical events and let the target compact again instead of
-    // re-authenticating that stale summary against rewritten notifications.
-    if (
-      references.mode === 'exact' &&
-      (selected.coveredRuntimeEvents.some(
-        (event) =>
-          event.content?.kind === 'function_response' && readFileDelivery(event.content.result),
-      ) ||
-        collectConversationCopyChildNotifications(selected.coveredRuntimeEvents).some(
-          (notification) => notification.artifactIds.some((id) => references.artifactIds.has(id)),
-        ))
-    )
-      return null;
     const sourceCheckpoint = selected.checkpoint;
     const coveredRuntimeEvents = selected.coveredRuntimeEvents.map(
       (sourceEvent) => clonedRuntimeEvents.get(sourceEvent.id)!,
@@ -901,7 +768,7 @@ function cloneAgentRunEvent(
     const checkpoint = buildHistoryCompactCheckpoint({
       sessionId: references.targetSessionId,
       coveredRuntimeEvents,
-      summary: savedOutputRewrite(references)(sourceCheckpoint.summary),
+      summary: sourceCheckpoint.summary,
       highWaterName: sourceCheckpoint.highWaterName,
       highWaterSeq: sourceCheckpoint.highWaterSeq,
       now: sourceCheckpoint.createdAt,
@@ -1021,7 +888,9 @@ function rewriteOwnedArtifactId(
   references: ConversationCopyArtifactReferenceMap,
 ): string {
   if (references.mode === 'preserve_external') return sourceArtifactId;
-  return rewriteOwnedId(sourceArtifactId, references.artifactIds, 'Artifact');
+  if (!references.artifactIds.has(sourceArtifactId))
+    throw new Error(`Conversation copy is missing Artifact ${sourceArtifactId}`);
+  return sourceArtifactId;
 }
 
 /**
@@ -1040,7 +909,7 @@ function reclaimableArtifactReference(
   references: ConversationCopyArtifactReferenceMap,
 ): string | undefined {
   if (references.mode === 'preserve_external') return sourceArtifactId;
-  return references.artifactIds.get(sourceArtifactId);
+  return references.artifactIds.has(sourceArtifactId) ? sourceArtifactId : undefined;
 }
 
 /** The `captureArtifactId` join, or nothing when its Artifact is gone. */
@@ -1213,23 +1082,10 @@ function rewriteRuntimeEventReferences(
   event: RuntimeEvent,
   references: ConversationCopyReferenceMap,
 ): RuntimeEvent {
-  const savedOutputs = savedOutputRewrite(references);
   const content =
     event.content?.kind === 'text'
       ? {
           ...event.content,
-          ...(references.mode === 'exact'
-            ? {
-                text: savedOutputs(
-                  event.content.origin?.kind === 'background_task'
-                    ? rewriteConversationCopyNotificationArtifacts(
-                        rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
-                        references.artifactIds,
-                      )
-                    : rewriteAttachmentResourceRefs(event.content.text, references.artifactIds),
-                ),
-              }
-            : {}),
           ...(event.content.attachments
             ? {
                 attachments: event.content.attachments.map((attachment) => ({
@@ -1245,17 +1101,9 @@ function rewriteRuntimeEventReferences(
             result: rewriteRuntimeToolResult(event.content.result, references),
             ...(event.content.modelProjection
               ? {
-                  modelProjection: rewriteDurableToolResultProjectionSavedOutputPaths(
-                    rewriteDurableToolResultProjectionArtifactRefs(
-                      rewriteDeliveryModelProjection(
-                        event.content.modelProjection,
-                        event.content.result,
-                        event.content.name,
-                        references,
-                      ),
-                      (ref) => rewriteProjectionArtifactRef(ref, references),
-                    ),
-                    savedOutputs,
+                  modelProjection: rewriteDurableToolResultProjectionArtifactRefs(
+                    event.content.modelProjection,
+                    (ref) => rewriteProjectionArtifactRef(ref, references),
                   ),
                 }
               : {}),
@@ -1394,32 +1242,15 @@ function rewriteToolResultContent(
   if (content.kind === 'image') {
     return { ...content, ref: rewriteStorageRef(content.ref, references) };
   }
-  if (content.kind === 'user_file_delivery') {
-    if (references.mode === 'preserve_external') return content;
-    // Delivered files are user-deletable, while their historical receipt is immutable.
-    const files = content.files.flatMap((file) => {
-      const artifactId = reclaimableArtifactReference(file.artifactId, references);
-      return artifactId ? [{ ...file, artifactId }] : [];
-    });
-    // A delivery must contain at least one file. Keep a readable notice when
-    // every target is gone instead of persisting an invalid empty delivery.
-    if (files.length === 0) {
-      return {
-        kind: 'text',
-        text: 'The files from this earlier delivery are no longer available in this conversation.',
-      };
-    }
-    return rewriteToolResultContentSavedOutputPaths(
-      { ...content, files },
-      savedOutputRewrite(references),
-    );
-  }
+  // Historical receipts keep the ids and paths returned at execution time.
+  // The target Session resolves them through its owned resource bindings.
+  if (content.kind === 'user_file_delivery') return content;
   if (content.kind === 'subagent') {
     if (linkedChildrenAreSnapshots(references) && content.childSessionId) {
       const { childSessionId: _childSessionId, runId: _runId, ...snapshot } = content;
       return {
         ...snapshot,
-        artifactIds: rewriteSnapshotArtifactIds(content.artifactIds, references),
+        artifactIds: content.artifactIds,
       };
     }
     return {
@@ -1454,7 +1285,7 @@ function rewriteToolResultContent(
           } = item;
           return {
             ...snapshot,
-            artifactIds: rewriteSnapshotArtifactIds(item.artifactIds, references),
+            artifactIds: item.artifactIds,
           };
         }
         return {
@@ -1479,47 +1310,7 @@ function rewriteToolResultContent(
       }),
     };
   }
-  return rewriteToolResultContentSavedOutputPaths(content, savedOutputRewrite(references));
-}
-
-/** Keep the producer's model receipt consistent with the copied delivery cards. */
-function rewriteDeliveryModelProjection(
-  projection: DurableToolResultProjection,
-  result: unknown,
-  toolName: string,
-  references: ConversationCopyMessageReferenceMap,
-): DurableToolResultProjection {
-  if (
-    references.mode !== 'exact' ||
-    toolName !== TOOL_NAMES.sendUserFile ||
-    projection.kind !== 'text' ||
-    projection.isError
-  )
-    return projection;
-  const content = readFileDelivery(result);
-  if (!content) return projection;
-  // The builtin receipt is derived from its typed delivery, never matched
-  // against historical text whose saved-output paths may already have moved.
-  // Other tools and failure/error projections keep their own model contract.
-  const rewritten = rewriteToolResultContent(content, references);
-  return encodeDurableToolResultOutput(
-    {
-      type: 'text',
-      value: rewritten.kind === 'text' ? rewritten.text : sendUserFileModelText(rewritten),
-    },
-    references.targetSessionId,
-  );
-}
-
-function readFileDelivery(
-  value: unknown,
-): Extract<ToolResultContent, { kind: 'user_file_delivery' }> | undefined {
-  try {
-    const content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(value));
-    return content.kind === 'user_file_delivery' ? content : undefined;
-  } catch {
-    return undefined;
-  }
+  return content;
 }
 
 function rewriteRuntimeToolResult(
@@ -1530,20 +1321,9 @@ function rewriteRuntimeToolResult(
   try {
     content = decodePersistedToolResultContent(markPersisted<ToolResultContent>(value));
   } catch {
-    // An opaque result names a saved output only in its text.
-    return rewriteOpaqueSavedOutputPaths(value, savedOutputRewrite(references));
+    return value;
   }
   return rewriteToolResultContent(content, references);
-}
-
-function rewriteArtifactIds(
-  artifactIds: readonly string[],
-  references: ConversationCopyArtifactReferenceMap,
-): readonly string[] {
-  return artifactIds.flatMap((artifactId) => {
-    const targetArtifactId = reclaimableArtifactReference(artifactId, references);
-    return targetArtifactId === undefined ? [] : [targetArtifactId];
-  });
 }
 
 function validatedExternalChildReferences(
@@ -1566,19 +1346,6 @@ function linkedChildrenAreSnapshots(references: ConversationCopyMessageReference
   return references.mode === 'exact' && references.linkedChildren.mode === 'snapshot';
 }
 
-function rewriteSnapshotArtifactIds(
-  artifactIds: readonly string[],
-  references: ConversationCopyMessageReferenceMap,
-): readonly string[] {
-  if (references.mode !== 'exact' || references.linkedChildren.mode !== 'snapshot') {
-    return artifactIds;
-  }
-  return artifactIds.flatMap((artifactId) => {
-    const targetArtifactId = references.artifactIds.get(artifactId);
-    return targetArtifactId === undefined ? [] : [targetArtifactId];
-  });
-}
-
 function rewriteLinkedRunId(
   sourceId: string,
   childSessionId: string | undefined,
@@ -1595,7 +1362,7 @@ function rewriteLinkedArtifactIds(
   childSessionId: string | undefined,
   references: ConversationCopyMessageReferenceMap,
 ): readonly string[] {
-  if (!childSessionId) return rewriteArtifactIds(sourceIds, references);
+  if (!childSessionId) return sourceIds;
   const external = validatedExternalChildReferences(childSessionId, references);
   return external ? preserveExternalIds(sourceIds, external.artifactIds, 'Artifact') : sourceIds;
 }
@@ -1639,23 +1406,9 @@ function rewriteStorageRef(
       refId,
     };
   }
-  const artifactId = references.artifactIds.get(ref.relativePath);
-  if (artifactId) {
-    return {
-      ...ref,
-      sessionId: references.targetSessionId,
-      relativePath: artifactId,
-    };
-  }
-  const relativePath = references.relativePaths.get(ref.relativePath);
-  if (!relativePath) {
+  if (!references.artifactIds.has(ref.relativePath))
     throw new Error(`Conversation copy is missing Session file ${ref.relativePath}`);
-  }
-  return {
-    ...ref,
-    sessionId: references.targetSessionId,
-    relativePath,
-  };
+  return { ...ref, sessionId: references.targetSessionId };
 }
 
 function rewriteProjectionArtifactRef(

@@ -27,6 +27,8 @@ import type {
   ToolResultContent,
 } from './events.js';
 import { defineObjectShape, hasExactShape } from './record-schema.js';
+import { parseAttachmentResourceRef } from './attachments.js';
+import { parseTaskOutputResourceRef } from './file-resources.js';
 import {
   isShellOutput,
   isShellRunStatus,
@@ -110,7 +112,7 @@ const CURRENT_TERMINAL_RESULT_SHAPE = defineObjectShape<TerminalToolResult>()(
 );
 
 const TERMINAL_SAVED_OUTPUT_SHAPE = defineObjectShape<TerminalSavedOutput>()(
-  ['path', 'chars', 'truncated'],
+  ['ref', 'chars', 'truncated'],
   [],
 );
 
@@ -120,7 +122,7 @@ const CURRENT_SHELL_RUN_RESULT_SHAPE = defineObjectShape<ShellRunToolResultRecor
     'completedAt',
     'exitCode',
     'failureMessage',
-    'outputFile',
+    'outputRef',
     'timeoutMs',
     'output',
     'operation',
@@ -177,8 +179,8 @@ function isOptionalSavedOutput(value: unknown): boolean {
     value === undefined ||
     (isRecord(value) &&
       hasExactShape(value, TERMINAL_SAVED_OUTPUT_SHAPE) &&
-      typeof value.path === 'string' &&
-      value.path.length > 0 &&
+      typeof value.ref === 'string' &&
+      parseAttachmentResourceRef(value.ref) !== null &&
       isNonNegativeInteger(value.chars) &&
       typeof value.truncated === 'boolean')
   );
@@ -215,6 +217,10 @@ function currentShellRunResult(value: Record<string, unknown>): ShellRunToolResu
     !isFiniteNumber(value.startedAt) ||
     !isFiniteNumber(value.updatedAt) ||
     !isPositiveInteger(value.revision) ||
+    (value.outputRef !== undefined &&
+      (value.mode !== 'pipes' ||
+        typeof value.outputRef !== 'string' ||
+        !parseTaskOutputResourceRef(value.outputRef))) ||
     !isOptionalFiniteNumber(value.completedAt) ||
     !isOptionalFiniteNumber(value.exitCode) ||
     !isOptionalFiniteNumber(value.timeoutMs) ||

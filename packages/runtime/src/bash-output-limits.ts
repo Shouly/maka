@@ -23,8 +23,8 @@
 // a result's text stays in the model's context as it was produced.
 //
 // - A valid result is shown whole up to BASH_INLINE_MAX_CHARS. Past that the
-//   whole output is saved to a file and the model gets the path and a preview
-//   of its start.
+//   whole output is staged privately; after publication the model gets an
+//   immutable resource ref and a preview of its start.
 // - A failure is shown whole up to BASH_FAILURE_INLINE_MAX_CHARS. Past that it
 //   gets a head and a tail, with no file.
 //
@@ -51,6 +51,10 @@ import {
 } from './tool-result-file.js';
 
 type TerminalToolResult = Extract<ToolResultContent, { kind: 'terminal' }>;
+/** Private producer state. This locator is consumed before publishing a durable tool result. */
+export type ProducedTerminalResult = TerminalToolResult & {
+  outputSpool?: { path: string; chars: number; truncated: boolean };
+};
 
 /** A valid result is shown whole up to this many characters, and saved to a file past it. */
 export const BASH_INLINE_MAX_CHARS = 30_000;
@@ -519,7 +523,7 @@ export interface WholeShellOutput {
 export async function boundTerminalResult(
   result: TerminalToolResult,
   whole?: WholeShellOutput,
-): Promise<TerminalToolResult> {
+): Promise<ProducedTerminalResult> {
   const output = result.output;
   if (output.mode !== 'pipes') return result;
   const valid = isValidBashOutcome(result);
@@ -723,9 +727,9 @@ function savedResult(
   result: TerminalToolResult,
   output: PipeShellOutput,
   saved: SavedShellOutput,
-): TerminalToolResult {
+): ProducedTerminalResult {
   const preview = saved.preview;
-  const savedOutput: TerminalSavedOutput = {
+  const outputSpool = {
     path: saved.path,
     chars: saved.chars,
     truncated: saved.truncated,
@@ -743,7 +747,7 @@ function savedResult(
         output.stderrTruncated ||
         preview.stderr.length < trimTrailingNewlines(output.stderr).length,
     },
-    savedOutput,
+    outputSpool,
   };
 }
 
@@ -759,7 +763,7 @@ export function savedOutputText(savedOutput: TerminalSavedOutput, preview: strin
  */
 function savedOutputNotice(saved: TerminalSavedOutput): string {
   if (!saved.truncated) return savedToolResultNotice(saved);
-  return `Output too long to show, and too long to save whole: ${saved.path} holds ${formatCount(saved.chars)} characters of it, and a line in the file marks where output was left out. Read it with Read or search it with Grep.`;
+  return `Output too long to show, and too long to save whole: ${saved.ref} holds ${formatCount(saved.chars)} characters of it, and a line in the file marks where output was left out. Read it with Read or search it with Grep.`;
 }
 
 /**

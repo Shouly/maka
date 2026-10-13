@@ -326,13 +326,13 @@ test('drives the renderer Session catalog facade through real UDS framing', asyn
     restoreUnderNextRemove = true;
     assert.deepEqual(
       await ipc.invoke('sessions:remove', 'session-ipc', { revisionFamily: true, requireArchived: true }),
-      { disposition: 'restored', archivedSubtaskCount: 0 },
+      { ok: true, result: { disposition: 'restored', archivedSubtaskCount: 0 } },
     );
     assert.equal((await ipc.invoke('sessions:list') as Array<{ isArchived: boolean }>)[0]?.isArchived, false);
     await ipc.invoke('sessions:archive', 'session-ipc');
     assert.deepEqual(await ipc.invoke('sessions:remove', 'session-ipc'), {
-      disposition: 'removed',
-      archivedSubtaskCount: 0,
+      ok: true,
+      result: { disposition: 'removed', archivedSubtaskCount: 0 },
     });
     assert.deepEqual(await ipc.invoke('sessions:list'), []);
     // Nothing was retired for the restored task: no `deleted` between the two

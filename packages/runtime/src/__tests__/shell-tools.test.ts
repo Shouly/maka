@@ -331,7 +331,7 @@ describe('Bash provider-facing result projection', () => {
     });
   });
 
-  test('a saved output reads as its path, how to reach it, and a preview', async () => {
+  test('a saved output names its resource ref, paging interface, and preview', async () => {
     const tool = buildManagedBashTool(fakeShellRuns());
     const output = await tool.toModelOutput?.({
       toolCallId: 'saved',
@@ -347,13 +347,13 @@ describe('Bash provider-facing result projection', () => {
             redacted: false,
           },
         }),
-        savedOutput: { path: '/tmp/maka/tool-results/s/r.txt', chars: 45_678, truncated: false },
+        savedOutput: { ref: 'maka://runtime/attachments/output', chars: 45_678, truncated: false },
       },
     });
     assert.deepEqual(output, {
       type: 'text',
       value:
-        'Output too long to show (45,678 characters). The full output is saved to /tmp/maka/tool-results/s/r.txt; read it with Read or search it with Grep.\n\nPreview (first 11 characters):\nfirst lines',
+        'Output too long to show (45,678 characters). The full output is saved to maka://runtime/attachments/output; use its current saved-file path with Read(file_path, offset, limit), Grep(path), Bash or Python. Copy it to the working directory before editing.\n\nPreview (first 11 characters):\nfirst lines',
     });
   });
 

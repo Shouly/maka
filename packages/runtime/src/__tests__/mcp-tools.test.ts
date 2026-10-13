@@ -39,7 +39,11 @@ import {
 } from '../mcp-tools.js';
 import { selectCollaborationTools } from '../plan-mode.js';
 import { readFileLineWindow } from '../text-line-window.js';
-import { formatSyntheticToolErrorText, TOOL_ERROR_RESULT_MAX_CHARS } from '../tool-runtime.js';
+import {
+  formatSyntheticToolErrorText,
+  TOOL_ERROR_RESULT_MAX_CHARS,
+  type MakaToolContext,
+} from '../tool-runtime.js';
 
 test('buildMcpTools projects discovery, abort, and rich model output', async () => {
   const readBinding = binding('internal-read-binding');
@@ -549,13 +553,20 @@ async function savedFile(root: string): Promise<{ path: string; text: string }> 
   assert.equal(names.length, 1);
   assert.match(names[0]!, /^[0-9a-f-]{36}\.txt$/u);
   const path = join(root, 's', names[0]!);
-  return { path, text: await readFile(path, 'utf8') };
+  return {
+    path: `maka://runtime/attachments/${names[0]!.slice(0, -4)}`,
+    text: await readFile(path, 'utf8'),
+  };
 }
 
 async function callBounded(
   result: McpCallResult,
   root: string | undefined,
-  options: { prepared?: boolean; origin?: 'provider' | 'code_mode' } = {},
+  options: {
+    prepared?: boolean;
+    origin?: 'provider' | 'code_mode';
+    recordArtifacts?: MakaToolContext['recordArtifacts'];
+  } = {},
 ): Promise<{ output: unknown; text: string; parts: string[] }> {
   const provider = fakeProvider(
     [boundTool(descriptor('server', 'big'), binding('big-binding'))],
@@ -568,7 +579,7 @@ async function callBounded(
           prepareTool: async () => ({ execute: async () => result, cancel: () => undefined }),
         }
       : provider,
-    root === undefined ? {} : { toolResultRoot: root },
+    {},
   );
   if (!tool) throw new Error('tool missing');
   const context = {
@@ -579,6 +590,36 @@ async function callBounded(
     abortSignal: new AbortController().signal,
     emitOutput() {},
     ...(options.origin ? { origin: options.origin } : {}),
+    ...(options.recordArtifacts
+      ? { recordArtifacts: options.recordArtifacts }
+      : root
+        ? {
+            recordArtifacts: async (
+              candidates: readonly import('../tool-artifacts.js').ToolArtifactCandidate[],
+            ) => {
+              const { mkdir, writeFile } = await import('node:fs/promises');
+              return Promise.all(
+                candidates.map(async (candidate) => {
+                  const id = crypto.randomUUID();
+                  const content = candidate.content ?? (await candidate.readContent!());
+                  await mkdir(join(root, 's'), { recursive: true });
+                  await writeFile(join(root, 's', `${id}.txt`), content);
+                  return {
+                    id,
+                    sessionId: 's',
+                    turnId: 't',
+                    createdAt: 1,
+                    name: candidate.name,
+                    kind: candidate.kind,
+                    source: candidate.source ?? 'tool_result',
+                    sizeBytes: Buffer.byteLength(content),
+                    relativePath: 'unexposed-test-locator',
+                  };
+                }),
+              );
+            },
+          }
+        : {}),
   };
   const output = options.prepared
     ? await (await tool.prepareExecution!({}, context)).execute(context)
@@ -590,7 +631,7 @@ async function callBounded(
   return { output, text, parts };
 }
 
-test('a text-only MCP result past 50,000 characters is saved and named by its path', async () => {
+test('a text-only MCP result past 50,000 characters is published with an explicit resource dependency', async () => {
   const root = await toolResultRoot();
   const { output, text } = await callBounded(
     { content: [{ type: 'text', text: 'r'.repeat(50_001) }] },
@@ -599,8 +640,12 @@ test('a text-only MCP result past 50,000 characters is saved and named by its pa
   const saved = await savedFile(root);
   // The file is the block under the line that names it.
   assert.equal(saved.text, `--- text ---\n${'r'.repeat(50_001)}`);
-  const notice = `Output too long to show (50,014 characters). The full output is saved to ${saved.path}; read it with Read or search it with Grep.`;
-  assert.deepEqual(output, { content: [{ type: 'text', text: notice }] });
+  const notice = `Output too long to show (50,014 characters). The full output is saved to ${saved.path}; use its current saved-file path with Read(file_path, offset, limit), Grep(path), Bash or Python. Copy it to the working directory before editing.`;
+  assert.deepEqual(output, {
+    kind: 'json',
+    value: { content: [{ type: 'text', text: notice }] },
+    fileRefs: [saved.path],
+  });
   assert.equal(text, notice);
 });
 
@@ -735,9 +780,10 @@ test('a saved MCP file keeps every line break, so Read can page it', async () =>
   assert.ok(saved.text.includes(`--- resource file:///a.md (text/markdown) ---\n${markdown}`));
   assert.ok(saved.text.endsWith('\n  "crlf": "one\r\ntwo"\n}'));
 
-  const whole = await readFileLineWindow(saved.path);
+  const storedPath = join(root, 's', `${saved.path.split('/').at(-1)}.txt`);
+  const whole = await readFileLineWindow(storedPath);
   assert.equal(whole.partial, true, 'a first page, not a refusal');
-  const page = await readFileLineWindow(saved.path, 8_010, 5);
+  const page = await readFileLineWindow(storedPath, 8_010, 5);
   assert.equal(page.content.split('\n').length, 5);
   assert.equal(page.totalLines, lines.length);
 });
@@ -871,7 +917,7 @@ test('an MCP error is never saved; its text reaches the model capped far under t
       throw failure;
     },
   );
-  const [tool] = buildMcpTools(provider, { toolResultRoot: root });
+  const [tool] = buildMcpTools(provider);
   await assert.rejects(
     Promise.resolve(
       tool?.impl(
@@ -891,3 +937,39 @@ test('an MCP error is never saved; its text reaches the model capped far under t
   assert.deepEqual(await readdir(root), []);
   assert.equal(formatSyntheticToolErrorText(failure).length, TOOL_ERROR_RESULT_MAX_CHARS);
 });
+
+for (const prepared of [false, true])
+  test(`MCP ${prepared ? 'prepared' : 'direct'} results publish a resource before emitting its stable reference`, async () => {
+    const result: McpCallResult = { content: [{ type: 'text', text: 'line\n'.repeat(12000) }] };
+    let stored = '';
+    const { text } = await callBounded(result, undefined, {
+      prepared,
+      recordArtifacts: async (candidates) => {
+        assert.equal(candidates.length, 1);
+        assert.equal(candidates[0]!.source, 'saved_tool_output');
+        stored = candidates[0]!.content as string;
+        return [
+          {
+            id: 'stable-output',
+            sessionId: 's',
+            turnId: 't',
+            name: 'tool-output.txt',
+            kind: 'file',
+            source: 'saved_tool_output',
+            sizeBytes: stored.length,
+            relativePath: 'unused',
+            createdAt: 1,
+          },
+        ];
+      },
+    });
+    assert.equal(stored, '--- text ---\n' + 'line\n'.repeat(12000));
+    assert.match(text, /maka:\/\/runtime\/attachments\/stable-output/);
+    const failed = await callBounded(result, undefined, {
+      prepared,
+      recordArtifacts: async () => {
+        throw new Error('storage unavailable');
+      },
+    });
+    assert.doesNotMatch(failed.text, /maka:\/\/runtime\/attachments/);
+  });

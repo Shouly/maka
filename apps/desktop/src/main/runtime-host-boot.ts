@@ -40,7 +40,6 @@ import { dirname, join } from "node:path";
 import { hostname } from "node:os";
 import { type ConnectionEvent } from '@maka/core/connections';
 import { type SessionChangedEvent, type SessionChangedReason } from '@maka/core/session';
-import { isBotDeliveryProvider } from '@maka/core/bot-chat-settings';
 import { resolveSystemUiLocale } from '@maka/core/ui-locale';
 import { TOOL_NAMES } from '@maka/core/tool-names';
 import {
@@ -48,8 +47,6 @@ import {
   providerAuthRequiresSecret,
 } from "@maka/core/llm-connections";
 import { BotRegistry, type BotIncomingMessage } from '@maka/runtime/bots';
-import {
-} from '@maka/runtime/scheduled-task-tools';
 import { buildMcpToolsWithIdentities } from '@maka/runtime/mcp-tools';
 import {
   createClientRuntimeHostCredentialStore,
@@ -177,7 +174,6 @@ import { projectPickerTitle } from "./project-picker-copy.js";
 import type { ProjectManagementService } from "./project-management-service.js";
 import {
   createProjectRootController,
-  type ProjectRootController,
 } from "./project-root-controller.js";
 import { createSessionCopyCleanupAuthority } from "@maka/storage/session-copy-cleanup";
 import {
@@ -1734,7 +1730,7 @@ function registerHostClientIpc(
     refreshOrganizationCatalog,
   });
   registerRuntimeHostRendererIpc({ ipcMain: scopedIpc, client });
-  registerRuntimeHostArtifactsIpc({
+  const artifactPresentation = registerRuntimeHostArtifactsIpc({
     uiLocale: () => desktopLocale.current(),
     ipcMain: scopedIpc,
     client,
@@ -1875,10 +1871,8 @@ function registerHostClientIpc(
     scopedIpc,
   );
   registerToolResultFileIpc({
+    revealArtifact: artifactPresentation.reveal,
     ipcMain: scopedIpc,
-    shell,
-    allowLocalPaths: !usesHostWorkspace,
-    stateRoot: localStateRoot,
   });
   registerWorkspaceSearchIpc({
     ipcMain: scopedIpc,

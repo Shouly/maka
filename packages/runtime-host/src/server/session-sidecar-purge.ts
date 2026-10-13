@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { dirname } from 'node:path';
+import { purgeFileResourceViews } from './file-resource-view.js';
 import { purgeSessionShellRunOutputFiles } from '@maka/runtime/shell-run-output-file';
 import { purgeSessionToolResultFiles } from '@maka/runtime/tool-result-file';
 import type { InteractiveArtifactStoreWriter } from '@maka/storage/artifact-stores';
@@ -50,6 +52,15 @@ export async function purgeSessionSidecars(
       ? [purgeSessionToolResultFiles(authority.toolResultRoot, sessionId)]
       : []),
   ]);
+  // Artifact reads/materializations hold the publication lock. Remove views
+  // after their owning memberships have drained, not concurrently with that fence.
+  if (authority.taskOutputRoot !== undefined) {
+    outcomes.push(
+      ...(await Promise.allSettled([
+        purgeFileResourceViews(dirname(authority.taskOutputRoot), sessionId),
+      ])),
+    );
+  }
   const failures = outcomes.flatMap((outcome) =>
     outcome.status === 'rejected' ? [outcome.reason] : [],
   );

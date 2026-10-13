@@ -60,8 +60,9 @@ export function decodeArtifactRecordJsons(values: readonly unknown[]): ArtifactR
     if (!hasSupportedArtifactSource(parsed)) continue;
     try {
       const record = decodeArtifactRecord(parsed, index + 1);
-      if (ids.has(record.id)) continue;
-      ids.add(record.id);
+      const membership = `${record.sessionId}:${record.id}`;
+      if (ids.has(membership)) continue;
+      ids.add(membership);
       records.push(record);
     } catch {}
   }
@@ -119,7 +120,8 @@ function decodeArtifactRecord(value: unknown, index: number): ArtifactRecord {
   }
   validateRelativeArtifactPath(value.relativePath);
   if (!isCompatibleArtifactName(value.name)) throw invalidMetadataRecord(index);
-  if (value.relativePath !== `${value.sessionId}/${value.id}-${value.name}`) {
+  const blobPath = /^blobs\/sha256\/([0-9a-f]{2})\/([0-9a-f]{64})$/u.exec(value.relativePath);
+  if (!(blobPath && blobPath[1] === blobPath[2]!.slice(0, 2))) {
     throw invalidMetadataRecord(index);
   }
   return value as unknown as ArtifactRecord;

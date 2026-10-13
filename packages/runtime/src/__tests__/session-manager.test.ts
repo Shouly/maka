@@ -26,6 +26,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSessionStore } from '@maka/storage/session-store';
+import { openInteractiveArtifactStoreForWrite } from '@maka/storage/artifact-stores';
+import { resolveStorageRoot, tryAcquireInteractiveRootOwner } from '@maka/storage/root-authority';
 import { DEFAULT_TOOL_MODE } from '@maka/core/tool-mode';
 import {
   buildInvocationOpenedEvent,
@@ -1379,6 +1381,7 @@ describe('SessionManager claimed graph intent execution', () => {
       runStore,
       runtimeEventStore: runStore,
       backends,
+      retainChildArtifacts: async (_parent, _child, ids) => ids,
       listArtifactsForTurn: async (sessionId, turnId) => [
         {
           id: 'child-output',
@@ -1391,6 +1394,17 @@ describe('SessionManager claimed graph intent execution', () => {
           sizeBytes: 6,
           source: 'tool_result',
         },
+        ...(['user_delivery', 'saved_tool_output'] as const).map((source) => ({
+          id: `child-${source}`,
+          sessionId,
+          turnId,
+          createdAt: 98,
+          name: `${source}.txt`,
+          kind: 'file' as const,
+          relativePath: `${sessionId}/${source}.txt`,
+          sizeBytes: 8,
+          source,
+        })),
         {
           id: 'child-internal-effect',
           sessionId,
@@ -1437,7 +1451,11 @@ describe('SessionManager claimed graph intent execution', () => {
       status: 'completed',
       summary: 'ok',
     });
-    assert.deepStrictEqual(result.artifactIds, ['child-output']);
+    assert.deepStrictEqual(result.artifactIds, [
+      'child-output',
+      'child-user_delivery',
+      'child-saved_tool_output',
+    ]);
     assert.deepStrictEqual(ready, [
       {
         claimId: claim.claimId,
@@ -1482,6 +1500,82 @@ describe('SessionManager claimed graph intent execution', () => {
       }),
       /does not match its durable claim/,
     );
+  });
+
+  test('notification recovery and a public Graph retry never restore a deleted, committed hand-back', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'maka-manager-handoff-'));
+    const owner = await tryAcquireInteractiveRootOwner(
+      await resolveStorageRoot({ path: root, kind: 'interactive' }),
+    );
+    assert.ok(owner);
+    let artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+    try {
+      const store = new MemorySessionStore();
+      const runStore = new MemoryAgentRunStore();
+      const backends = new BackendRegistry();
+      backends.register('ai-sdk', (ctx) => new TestBackend(ctx));
+      const deps = {
+        store,
+        runStore,
+        runtimeEventStore: runStore,
+        backends,
+        newId: nextId(),
+        now: nextNow(40),
+        listArtifactsForTurn: (sessionId: string, turnId: string) =>
+          artifacts.listTurnArtifacts(sessionId, turnId),
+        retainChildArtifacts: (
+          targetSessionId: string,
+          sourceSessionId: string,
+          artifactIds: readonly string[],
+        ) => artifacts.retainChildArtifacts({ targetSessionId, sourceSessionId, artifactIds }),
+      };
+      const manager = new SessionManager(deps);
+      const parent = await manager.createSession(makeInput({ name: 'Supervisor' }));
+      const child = await createGraphOperatorSession(store, parent.id);
+      const claim = graphIntentClaim({ targetSessionId: child.id });
+      await artifacts.create({
+        id: 'report',
+        sessionId: child.id,
+        turnId: claim.targetTurnId,
+        name: 'report.txt',
+        kind: 'file',
+        source: 'user_delivery',
+        content: 'child report',
+      });
+      const first = await manager.runClaimedAgentGraphIntent(
+        graphExecutionInput(claim, 'test graph prompt'),
+      );
+      assert.deepEqual(first.artifactIds, ['report']);
+      assert.deepEqual(await artifacts.deleteUserArtifactInSession(parent.id, 'report'), {
+        kind: 'deleted',
+      });
+      artifacts.close();
+      artifacts = await openInteractiveArtifactStoreForWrite(owner.lease);
+      const restarted = new SessionManager(deps);
+      const notices = await restarted.pendingChildAgentNotifications(parent.id);
+      assert.equal(notices.length, 1);
+      assert.deepEqual(notices[0]!.artifactIds, []);
+      assert.equal(await artifacts.getRecordInSession(parent.id, 'report'), undefined);
+      await restarted.markChildAgentNotified(child.id, claim.targetTurnId);
+      const retry = await restarted.runClaimedAgentGraphIntent(
+        graphExecutionInput(claim, 'test graph prompt'),
+      );
+      assert.deepEqual(retry.artifactIds, []);
+      assert.equal(await artifacts.getRecordInSession(parent.id, 'report'), undefined);
+      assert.equal(
+        (await runStore.listSessionInvocations(child.id)).length,
+        1,
+        'retry does not execute the child again',
+      );
+      assert.deepEqual(await artifacts.readTextInSession(child.id, 'report'), {
+        ok: true,
+        text: 'child report',
+      });
+    } finally {
+      artifacts.close();
+      await owner.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test('joins concurrent execution of one claim and rejects in-flight input drift', async () => {
@@ -2353,6 +2447,120 @@ describe('SessionManager child-session runtime primitive', () => {
 
     parentGate.release();
     while (!(await parentTurn.next()).done) {}
+  });
+
+  test('child file queries never grant ownership; recovery commits hand-back before announcing files', async () => {
+    const store = new MemorySessionStore();
+    const runStore = new MemoryAgentRunStore();
+    const backends = new BackendRegistry();
+    const parentGate = makeGate();
+    const childGate = makeGate();
+    backends.register('ai-sdk', (ctx) =>
+      ctx.header.subagentRuntime
+        ? new HandbackBackend(ctx, childGate)
+        : new TestBackend(ctx, parentGate),
+    );
+    let parentId = '';
+    let childFilesPresent = true;
+    let refuseHandBack = true;
+    let commits = 0;
+    const held = new Set<string>();
+    const deps = {
+      store,
+      runStore,
+      runtimeEventStore: runStore,
+      backends,
+      newId: nextId(),
+      now: nextNow(300),
+      listArtifactsForTurn: async (
+        sessionId: string,
+        turnId: string,
+      ): Promise<ArtifactRecord[]> => {
+        const records: ArtifactRecord[] = [
+          {
+            id: 'output',
+            sessionId,
+            turnId,
+            createdAt: 301,
+            name: 'answer.txt',
+            kind: 'file',
+            source: 'user_delivery',
+            relativePath: 'private/blob',
+            sizeBytes: 6,
+          },
+          {
+            id: 'private-input',
+            sessionId,
+            turnId,
+            createdAt: 301,
+            name: 'input.txt',
+            kind: 'file',
+            source: 'user_upload',
+            relativePath: 'private/input',
+            sizeBytes: 6,
+          },
+        ];
+        return sessionId === parentId
+          ? records.filter((record) => held.has(record.id))
+          : childFilesPresent
+            ? records
+            : [];
+      },
+      retainChildArtifacts: async (receiver: string, _child: string, ids: readonly string[]) => {
+        commits++;
+        assert.equal(receiver, parentId);
+        if (refuseHandBack) throw new Error('hand-back temporarily unavailable');
+        for (const id of ids) held.add(id);
+        return ids;
+      },
+    };
+    const manager = new SessionManager(deps);
+    const parent = await manager.createSession(makeInput());
+    parentId = parent.id;
+    const turn = manager
+      .sendMessage(parent.id, { turnId: 'parent-turn', text: 'delegate' })
+      [Symbol.asyncIterator]();
+    await turn.next();
+    const [parentRun] = await runStore.listSessionInvocations(parent.id);
+    const child = await manager.spawnChildSession(parent.id, {
+      spawnedBy: {
+        parentRunId: parentRun!.runId,
+        parentTurnId: 'parent-turn',
+        toolCallId: 'call-agent',
+      },
+      agentProfile: GENERAL_PURPOSE_AGENT_TYPE,
+      prompt: 'Return a file.',
+      description: 'Prepare a file',
+    });
+    const query = () =>
+      manager.readChildAgentOutput(parent.id, {
+        execution: { kind: 'child_session', sessionId: child.childSessionId },
+        view: 'result',
+      });
+    try {
+      assert.deepEqual((await query()).result?.artifactIds, []);
+      assert.equal(commits, 0, 'running queries are read-only');
+      childGate.release();
+      await manager.waitForChildAgent(child.childSessionId);
+      const attempts = commits;
+      assert.deepEqual((await query()).result?.artifactIds, []);
+      assert.equal(commits, attempts, 'terminal queries do not repair a failed hand-back');
+      assert.deepEqual(await manager.pendingChildAgentNotifications(parent.id), []);
+      refuseHandBack = false;
+      const restarted = new SessionManager(deps);
+      const notices = await restarted.pendingChildAgentNotifications(parent.id);
+      assert.equal(notices.length, 1);
+      assert.deepEqual(notices[0]!.artifactIds, ['output']);
+      assert.deepEqual([...held], ['output'], 'private child inputs are never handed back');
+      childFilesPresent = false;
+      const committed = commits;
+      assert.deepEqual((await query()).result?.artifactIds, ['output']);
+      assert.equal(commits, committed);
+    } finally {
+      childGate.release();
+      parentGate.release();
+      while (!(await turn.next()).done) {}
+    }
   });
 
   test('a child reports what it hands back, and a message sent while it works reaches it', async () => {

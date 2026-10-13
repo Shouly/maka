@@ -80,11 +80,13 @@ describe('Artifact source policy', () => {
     assert.equal(isArtifactUserVisible({ ...delivery, kind: 'file' }), true);
     assert.equal(canUserDeleteArtifact(delivery), true);
     assert.equal(isArtifactSharedSessionReadable(delivery), true);
-    // A delivery is addressed at the user, not at a parent agent's result.
-    assert.equal(isArtifactChildResultOutput(delivery), false);
+    // Hand-back must declare the dependency even when the file was delivered
+    // to the user, so a detached parent branch can retain its bytes.
+    assert.equal(isArtifactChildResultOutput(delivery), true);
   });
   test('includes produced outputs in child results without leaking internal artifacts', () => {
     assert.equal(isArtifactChildResultOutput({ source: 'tool_result' }), true);
+    assert.equal(isArtifactChildResultOutput({ source: 'saved_tool_output' }), true);
     assert.equal(isArtifactChildResultOutput({ source: 'subagent_writeback' }), true);
     assert.equal(isArtifactChildResultOutput({ source: 'session_effect' }), false);
     assert.equal(isArtifactChildResultOutput({ source: 'user_upload' }), false);

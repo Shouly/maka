@@ -55,6 +55,9 @@ export interface WelcomeCopy {
     readonly label: string;
     readonly none: string;
     readonly empty: string;
+    readonly loading: string;
+    readonly unavailable: string;
+    readonly retry: string;
     readonly openSettings: string;
   };
 }
@@ -89,6 +92,9 @@ const WELCOME_COPY = {
       label: '模型',
       none: '选择模型',
       empty: '还没有可用模型。',
+      loading: '正在读取模型列表…',
+      unavailable: '模型列表暂时无法读取',
+      retry: '重新读取模型列表',
       openSettings: '前往模型设置',
     },
   },
@@ -121,6 +127,9 @@ const WELCOME_COPY = {
       label: '模型',
       none: '選擇模型',
       empty: '還沒有可用模型。',
+      loading: '正在讀取模型清單…',
+      unavailable: '模型清單暫時無法讀取',
+      retry: '重新讀取模型清單',
       openSettings: '前往模型設定',
     },
   },
@@ -153,6 +162,9 @@ const WELCOME_COPY = {
       label: 'Model',
       none: 'Choose model',
       empty: 'No models available yet.',
+      loading: 'Loading models…',
+      unavailable: 'Could not load models',
+      retry: 'Retry loading models',
       openSettings: 'Open model settings',
     },
   },

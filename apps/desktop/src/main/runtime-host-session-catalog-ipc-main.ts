@@ -32,6 +32,7 @@ import type {
   SessionModelTarget,
 } from '@maka/runtime-host/protocol';
 import type {
+  DesktopSessionActionResult,
   DesktopSessionUpdateFailureCode,
   DesktopSessionUpdateResult,
 } from '../shared/desktop-session-projection.js';
@@ -136,14 +137,18 @@ export function registerRuntimeHostSessionCatalogIpc(
   ipcMain.handle('sessions:archive', async (_event, sessionId: string, options?: unknown) => {
     requestsRevisionFamily(options);
     const ids = await actionIds(sessionId, { revisionFamily: true });
-    await deps.client.setSessionLifecycle(sessionId, 'archived');
+    const outcome = await sessionAction(() => deps.client.setSessionLifecycle(sessionId, 'archived'));
+    if (!outcome.ok) return outcome;
     await finishSessionRetirement(deps, ids, 'archived');
+    return { ok: true, result: undefined } satisfies DesktopSessionActionResult<void>;
   });
   ipcMain.handle('sessions:unarchive', async (_event, sessionId: string, options?: unknown) => {
     requestsRevisionFamily(options);
     const ids = await actionIds(sessionId, { revisionFamily: true });
-    await deps.client.setSessionLifecycle(sessionId, 'active');
+    const outcome = await sessionAction(() => deps.client.setSessionLifecycle(sessionId, 'active'));
+    if (!outcome.ok) return outcome;
     for (const id of ids) deps.emitSessionsChanged('updated', id);
+    return { ok: true, result: undefined } satisfies DesktopSessionActionResult<void>;
   });
   ipcMain.handle(
     'sessions:setFlagged',
@@ -212,10 +217,10 @@ export function registerRuntimeHostSessionCatalogIpc(
     const ids = await actionIds(sessionId, { revisionFamily: true });
     // A task restored under the caller's decision is left alone, and nothing
     // downstream of the deletion runs for it.
-    const outcome = await deps.client.removeSession(sessionId, {
-      requireArchived: requiresArchivedSession(options),
-    });
-    if (outcome.disposition === 'removed') await finishSessionRetirement(deps, ids, 'deleted');
+    const requireArchived = requiresArchivedSession(options);
+    const outcome = await sessionAction(() => deps.client.removeSession(sessionId, { requireArchived }));
+    if (!outcome.ok) return outcome;
+    if (outcome.result.disposition === 'removed') await finishSessionRetirement(deps, ids, 'deleted');
     return outcome;
   });
   ipcMain.handle('sessions:removePreview', async (_event, sessionId: string) => {
@@ -254,6 +259,20 @@ async function finishSessionRetirement(
   for (const sessionId of sessionIds) deps.emitSessionsChanged(reason, sessionId);
   const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
   if (failed) throw failed.reason;
+}
+
+// Only the Host command is inside this boundary. Failures releasing Desktop
+// resources after a committed retirement are not ordinary Host refusals.
+async function sessionAction<Result>(
+  action: () => Promise<Result>,
+): Promise<DesktopSessionActionResult<Result>> {
+  try {
+    return { ok: true, result: await action() };
+  } catch (error) {
+    const code = updateFailureCode(error);
+    if (code) return { ok: false, code };
+    throw error;
+  }
 }
 
 async function updateConfiguration(

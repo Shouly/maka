@@ -19,6 +19,12 @@
 
 import { isCanonicalArtifactEntityId } from '@maka/core/artifacts';
 import type { RuntimeEvent } from '@maka/core/runtime-event';
+import { parseTaskOutputResourceRef } from '@maka/core/file-resources';
+
+export type FileNotificationEvent = Pick<
+  RuntimeEvent,
+  'role' | 'author' | 'partial' | 'content' | 'ts'
+>;
 
 export interface ConversationCopyChildNotification {
   readonly childSessionId: string;
@@ -46,12 +52,13 @@ function readBlock(block: string): Omit<ConversationCopyChildNotification, 'ts'>
 
 /** Reads both individual steering notifications and batched idle wake notifications. */
 export function collectConversationCopyChildNotifications(
-  events: readonly RuntimeEvent[],
+  events: readonly FileNotificationEvent[],
 ): readonly ConversationCopyChildNotification[] {
   return events.flatMap((event) => {
     if (
       event.partial ||
       event.role !== 'user' ||
+      (event.author !== 'host' && event.author !== 'system') ||
       event.content?.kind !== 'text' ||
       event.content.origin?.kind !== 'background_task'
     )
@@ -61,6 +68,46 @@ export function collectConversationCopyChildNotifications(
       return notification ? [{ ...notification, ts: event.ts }] : [];
     });
   });
+}
+
+/** Batched idle wakes carry only the first task in origin; inspect the producer's escaped envelopes, not prose. */
+export function collectConversationCopyTaskOutputNotifications(
+  events: readonly FileNotificationEvent[],
+): readonly string[] {
+  return events.flatMap((event) => {
+    if (
+      event.partial ||
+      event.role !== 'user' ||
+      (event.author !== 'host' && event.author !== 'system') ||
+      event.content?.kind !== 'text' ||
+      event.content.origin?.kind !== 'background_task'
+    )
+      return [];
+    return [...event.content.text.matchAll(BLOCK)].flatMap(([block]) => {
+      const head =
+        /^<task-notification>\n<task-id>([^<>\n]+)<\/task-id>\n<tool-use-id>[^<>\n]+<\/tool-use-id>\n<output-ref>([^<>\n]+)<\/output-ref>\n/u.exec(
+          block,
+        );
+      const output = head && parseTaskOutputResourceRef(head[2]!);
+      return output && output.shellRunId === head![1] ? [output.shellRunId] : [];
+    });
+  });
+}
+
+/** The durable envelope retains dependencies; the provider sees prepared file
+ * descriptions instead of the internal ID list. User text is never rewritten. */
+export function fileNotificationModelText(event: FileNotificationEvent, text: string): string {
+  if (
+    event.partial ||
+    event.role !== 'user' ||
+    (event.author !== 'host' && event.author !== 'system') ||
+    event.content?.kind !== 'text' ||
+    event.content.origin?.kind !== 'background_task'
+  )
+    return text;
+  return text.replace(BLOCK, (block) =>
+    readBlock(block) ? block.replace(ARTIFACTS, '\n') : block,
+  );
 }
 
 /** Called only on a host-authored background-task message, after ownership validation. */

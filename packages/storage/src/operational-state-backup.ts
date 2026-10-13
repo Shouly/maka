@@ -375,9 +375,10 @@ function validateSqlite(path: string, files: readonly OperationalBackupFile[]): 
 
       const artifactRows = database
         .prepare(`
-          SELECT artifact_id, session_id, created_at, relative_path, record_json
-          FROM artifact_records
-          ORDER BY created_at, artifact_id
+          SELECT o.artifact_id, r.session_id, o.created_at, o.relative_path,
+            json_set(o.record_json, '$.sessionId', r.session_id) AS record_json
+          FROM artifact_records r JOIN artifact_objects o USING (artifact_id)
+          ORDER BY o.created_at, o.artifact_id
         `)
         .all() as Array<{
         artifact_id?: unknown;
